@@ -572,8 +572,8 @@ function render(){
   var wsel=$('#weeksel'),topEl=document.querySelector('.top'),barEl0=document.querySelector('.bar');
   if(isMobile()){if(wsel.parentNode!==$('#wkslot'))$('#wkslot').appendChild(wsel)}
   else if(wsel.parentNode!==barEl0)barEl0.insertBefore(wsel,$('#wkbadge'));
-  var nb=$('#bNewsM');nb.classList.toggle('on',mode==='news');
-  nb.classList.toggle('dot',(state.news||[]).some(function(n){return n.week===weekOf(cur())}));
+  $('#bNewsM').classList.toggle('on',mode==='news');
+  updateNewsBadge();
   document.body.classList.toggle('coach',mode==='coach');
   document.body.classList.toggle('locked',mode==='coach'&&!!state.coachLocked);
   document.body.classList.toggle('analytics',mode==='analytics');
@@ -595,7 +595,7 @@ function render(){
   }
   $('#nopub').hidden=true;
   if(mode==='analytics'){renderAnalytics();return}
-  if(mode==='news'){renderTabs();renderNewsPage();$('#sesstitle').value=cur().title||'';return}
+  if(mode==='news'){markNewsSeen();renderTabs();renderNewsPage();$('#sesstitle').value=cur().title||'';return}
   if(mode==='tee'){renderTabs();renderTeePage();$('#sesstitle').value=cur().title||'';return}
   var sc0=seasonCamp(weekOf(cur()));
   if((btView||campView)&&(!sc0||sc0.id!==state.active)){btView=false;campView=false}
@@ -3054,6 +3054,29 @@ function ptoNames(s,p,j){
 }
 /* News and PTO belong to the whole week, so AM, PM and Camp share them. */
 function newsInSession(it,s){return it.kind==='news'}
+/* the red badge on the News & PTO button: every news item, weekend note and PTO entry in the week being viewed that this device hasn't opened yet.
+   Opening the News page marks them seen; anything added later brings the badge back. Remembered per device (not shared). */
+var NEWS_SEEN_KEY='wp-news-seen';
+function newsItemIds(wk){
+  var ids=[];
+  (state.news||[]).forEach(function(n){if(n.week===wk)ids.push('n'+n.id)});
+  (state.trav||[]).forEach(function(x){if(x.week===wk)ids.push('t'+x.id)});
+  return ids;
+}
+function newsSeenMap(){try{return JSON.parse(localStorage.getItem(NEWS_SEEN_KEY)||'{}')||{}}catch(e){return {}}}
+function updateNewsBadge(){
+  var b=document.getElementById('nbadge');if(!b||!state.sessions.length)return;
+  var wk=weekOf(cur()),seen=newsSeenMap()[wk]||[];
+  var n=newsItemIds(wk).filter(function(id){return seen.indexOf(id)<0}).length;
+  b.hidden=!n;b.textContent=n>99?'99+':String(n);
+  $('#bNewsM').setAttribute('aria-label',n?('News and PTO, '+n+' new'):'News and PTO');
+}
+function markNewsSeen(){
+  var wk=weekOf(cur()),m=newsSeenMap();
+  m[wk]=newsItemIds(wk);
+  try{localStorage.setItem(NEWS_SEEN_KEY,JSON.stringify(m))}catch(e){}
+  updateNewsBadge();
+}
 function initials(n){return String(n||'').replace(/\(.*?\)/g,' ').trim().split(/\s+/).map(function(w){return w.charAt(0)}).join('').slice(0,2).toUpperCase()}
 function ptoDays(it,s){
   var idx=(it.days&&it.days.length)?it.days.filter(function(i){return i<s.days.length}):s.days.map(function(d,i){return i});

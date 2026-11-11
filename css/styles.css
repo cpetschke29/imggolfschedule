@@ -1133,7 +1133,9 @@ body:not(.staff) .tr1,body:not(.staff) .tr2{display:contents}
   .menubtn span{background:#fff}
   .newsbtn{display:flex;position:relative;align-items:center;justify-content:center;width:40px;height:40px;border-radius:10px;padding:0;cursor:pointer}
   .newsbtn.on{background:#fff;color:#0A2A55}
-  .newsbtn.dot::after{content:"";position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:#FFDE55;border:2px solid #0A2A55}
+  /* red count badge, like Messages: how many News, weekend and PTO items the coach hasn't opened yet */
+  .nbadge{position:absolute;top:-7px;right:-7px;min-width:20px;height:20px;padding:0 6px;box-sizing:border-box;border-radius:10px;background:#E5251B;color:#fff;font:700 12px/20px "Instrument Sans",system-ui,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35);pointer-events:none}
+  .nbadge[hidden]{display:none}
   .wkpill{display:flex;align-items:center;border:1px solid rgba(255,255,255,.42);border-radius:12px;background:rgba(255,255,255,.14);overflow:hidden}
   .wkpill[hidden]{display:none}
   .wkpill button{border:0;background:transparent;color:#fff;font-size:22px;line-height:1;width:30px;height:38px;padding:0 0 3px}
@@ -1220,7 +1222,7 @@ body:not(.staff) .tr1,body:not(.staff) .tr2{display:contents}
   .wkpill{border-radius:12px}
   .wkpill button{font-size:26px;width:34px;height:42px;color:#fff;font-weight:700}
   .top #weeksel{font-size:14px!important;font-weight:800;color:#fff}
-  .newsbtn.dot::after{width:11px;height:11px;top:4px;right:4px;border:2px solid #061A38}
+  .nbadge{top:-8px;right:-8px;min-width:22px;height:22px;line-height:22px;font-size:13px;border-radius:11px}
 }
 .mloghr{margin:6px 0 4px}
 .mloginopen{color:var(--muted);font-weight:600;font-size:13px}
