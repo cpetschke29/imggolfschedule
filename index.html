@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>
+/* iPad / tablets (touch, big screen): lay the page out at phone width (390) so it looks exactly like phone-preview; the tablet scales it up. Desktop (mouse) and phones are untouched. */
+(function(){try{
+  var m=document.querySelector('meta[name=viewport]');
+  var touch=window.matchMedia&&window.matchMedia('(hover:none) and (pointer:coarse)').matches;
+  var big=Math.min(screen.width,screen.height)>=700;
+  if(touch&&big&&m)m.setAttribute('content','width=390, viewport-fit=cover');
+}catch(e){}})();
+</script>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Golf Schedule">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#0B70B8">
+<meta name="format-detection" content="telephone=no">
+<title>Golf - Weekly Schedule</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+
+</head>
+<body>
+
+<header class="top noprint">
+  <div class="brand"><span class="logo" role="img" aria-label="IMG Academy"></span><span class="btitle">Golf - Weekly Schedule</span></div>
+  <div class="hbanner" aria-hidden="true"></div>
+  <div class="wkpill" id="wkpill" hidden><button id="wkPrev" aria-label="Earlier week">&#8249;</button><span id="wkslot"></span><button id="wkNext" aria-label="Later week">&#8250;</button></div>
+  <button class="newsbtn" id="bNewsM" aria-label="News and PTO" title="News &amp; PTO"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a2 2 0 0 1 2 2v13H7a2 2 0 0 1-2-2z"/><path d="M18 9h2a1 1 0 0 1 1 1v7a2 2 0 0 1-2 2h-1"/><path d="M8 8h7M8 12h7M8 16h4"/></svg></button>
+  <div class="topright">
+  <div class="tr1">
+  <div class="seg" role="group" aria-label="View">
+    <button id="mEdit" class="staff-only" aria-pressed="true">Edit</button>
+    <button id="mCoach" aria-pressed="false">Coach view</button>
+    <button id="mNews" aria-pressed="false">News &amp; PTO</button>
+    <button id="mTee" class="staff-only" aria-pressed="false">Tee Time Requests</button>
+    <button id="mAnalytics" class="edit-only staff-only" aria-pressed="false">Analytics</button>
+  </div>
+  <span class="sp"></span>
+  <button class="btn primary edit-only" id="bImport">Import Excel</button>
+  <button class="btn staff-only" id="bUndo" disabled>Undo</button>
+  <button class="btn edit-only" id="bCustom">Customize</button>
+  </div>
+  <div class="tr2">
+  <button class="btn staff-only noprint" id="bPubRange">Publish to range staff</button>
+  <button class="btn staff-only noprint" id="bPub">Publish to general staff</button>
+  <button class="btn danger staff-only noprint" id="bDelWeek" title="Delete this whole week">Delete week</button>
+  <div class="menuwrap">
+    <button class="btn menubtn" id="bMenu" aria-haspopup="true" aria-expanded="false" aria-label="Menu" title="Menu"><span></span><span></span><span></span></button>
+    <div class="menu" id="menu" hidden>
+      <div class="mnav" aria-label="Views">
+        <button class="mitem staff-only" data-proxy="mEdit">Edit</button>
+        <button class="mitem" data-proxy="mCoach">Coach view</button>
+        <button class="mitem" data-proxy="mNews">News &amp; PTO</button>
+        <button class="mitem staff-only" data-proxy="mTee">Tee Time Requests</button>
+        <button class="mitem staff-only" data-proxy="bPubRange">Publish to range staff</button>
+        <button class="mitem staff-only" data-proxy="bPub">Publish to general staff</button>
+        <button class="mitem staff-only" data-proxy="bUndo">Undo</button>
+        <hr>
+      </div>
+      <button class="mitem locked-only" id="bWho">Back to start</button>
+      <button class="mitem staff-only" id="bHomeNames" title="Add or remove the names on the first screen">Edit name list…</button>
+      <button class="mitem staff-only" id="bRangeView">Range staff view</button>
+      <button class="mitem" id="bPrint">Print…</button>
+      <button class="mitem staff-only" id="bExport">Export Excel</button>
+      <button class="mitem staff-only" id="bExportCoach" title="One sheet per coach, with no hidden data. This is the file to send to coaches.">Export coach copy</button>
+      <button class="mitem edit-only" id="bExportAll" title="Export every week in one workbook">Export all weeks</button>
+      <hr class="mloghr">
+      <button class="mitem mloginopen" id="mloginopen">Staff log in</button>
+      <div class="mlogin" id="mlogin" hidden>
+        <label>Password<input type="password" id="mpin" inputmode="numeric" autocomplete="off" aria-label="Password"></label>
+        <div class="warnbox" id="mpinerr" role="alert">That password didn’t match. Try again.</div>
+        <button class="btn primary" id="mgo">Log in</button>
+      </div>
+      <div class="mloggedin" id="mloggedin" hidden><span>Logged in</span><button class="btn" id="mlogout">Log out</button></div>
+    </div>
+  </div>
+  </div>
+  </div>
+  <input type="file" id="file" accept=".xlsx,.xls,.xlsm" hidden>
+</header>
+
+<div class="bar">
+  <div class="laymode edit-only noprint" id="layoutseg" role="group" aria-label="Edit layout"><button data-lay="coach" aria-pressed="true">By coach</button><button data-lay="day" aria-pressed="false">By day</button></div>
+  <select id="weeksel" class="weeksel noprint" aria-label="Week"></select>
+  <span class="wkbadge staff-only noprint" id="wkbadge" hidden>Archived</span>
+  <div class="tabs noprint" id="tabs" role="tablist"></div>
+  <input class="sesstitle" id="sesstitle" data-p="title" aria-label="Schedule title">
+  <select class="pf coach-only noprint" id="podfilter" aria-label="Show one coach's schedule"></select>  <span class="lockbadge coach-only" id="lockbadge"></span>
+</div>
+
+<div class="daybar noprint" id="daybar" role="tablist" aria-label="Day" hidden></div>
+
+<div class="lib noprint edit-only">
+  <span class="lt">Event library</span>
+  <div class="chips" id="libchips"></div>
+  <button class="libadd" data-act="newtpl">+ New event</button>
+  <button class="libadd zpbtn" data-act="zoneplan" title="Fill in the zones for this week's Practice and Cross sport events">Assign zones…</button>
+  <span class="hint">Drag an event into a day at the time you want. On course events: start is the bus departure, end is pick up. Drag cards to move them, drag a card's bottom edge to change its length, double-click an empty spot to add an event.</span>
+</div>
+
+<div id="newspage" class="npage" hidden></div>
+<div id="teepage" class="npage" hidden></div>
+<div id="nopub" class="npage" hidden><p class="note">No schedule has been published yet. Check back soon.</p></div>
+
+<div id="btpage" class="npage" hidden></div>
+<div id="boardwrap">
+<div class="gridwrap"><div id="grid"></div></div>
+
+<div class="sect"><h2 class="display">Transportation</h2></div>
+<div class="gridwrap"><div id="trips"></div></div>
+<div id="campwrap"></div>
+<div class="tpad"></div>
+</div>
+<div id="analytics" class="an" hidden></div>
+
+<datalist id="programs"><option value="TRAIN"><option value="COMPETE"><option value="Tournament"><option value="Practice 2"></datalist>
+
+<dialog id="dlg">
+  <div class="dbody">
+    <h2 id="dtitle">Edit event</h2>
+    <label>Type<select id="dcat"></select></label>
+    <div id="dcolrow"><small style="font-weight:500;font-size:13px">Color <span style="color:var(--muted);font-weight:400">(this library chip and events dropped from it)</span></small>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="color" id="dcolor" aria-label="Chip color"><button type="button" class="btn" id="dcolreset">Use the type color</button></div></div>
+    <div class="row2" id="dcourserow"><label>Round<select id="dholes"><option value="9">Play 9 holes</option><option value="18">Play 18 holes</option><option value="36">Play 36 holes</option><option value="0">Other (type a title)</option></select></label><label id="dcourselab">at<select id="dcourse"></select></label></div>
+    <label id="dcoursetxtrow">Course name<input id="dcoursetxt" type="text" autocomplete="off"></label>
+    <label id="dtitrow">Title<input id="dtit" type="text" autocomplete="off"></label>
+    <div class="row2" id="dtimes">
+      <label><span id="dslab">Start</span><input id="dstart" type="time" step="900"></label>
+      <label><span id="delab">End</span><input id="dend" type="time" step="900"></label>
+    </div>
+    <div class="row2" id="dteerow"><label>Tee time <small>optional, you can edit it</small><input id="dtee" type="time" step="300"></label><label>Start type<select id="dteelab"><option>Tee time</option><option>Shotgun</option></select></label></div>
+    <label id="dteeoffrow">Tee time after the bus leaves <small>used when this event is dropped in</small><select id="dteeoff"></select></label>
+    <label id="ddurrow">Length <small>how long a new event is when you drop it in</small><select id="ddur"></select></label>
+    <div id="dzrow">
+      <small style="font-weight:500;font-size:13px">Zones</small>
+      <details class="zdrop" id="dz"><summary id="dzsum">No zones</summary><div class="zpanel" id="dzp"></div></details>
+    </div>
+    <div id="dsegrow">
+      <label class="crow chk" style="font-size:13px"><input type="checkbox" id="dsegon"> Split into time blocks, each with its own zones <span style="color:var(--muted)">(for a range session that changes zones)</span></label>
+      <div id="dsegbox" hidden>
+        <div id="dsegs"></div>
+        <button type="button" class="btn" id="dsegadd">+ Add block</button>
+        <p class="note">The event runs from the first block's start to the last block's end. Zones for each block go in its own box, separated by commas, like 5, 7, 11.</p>
+      </div>
+    </div>
+    <div id="dpodrow">
+      <small style="font-weight:500;font-size:13px">Pods going <span style="color:var(--muted);font-weight:400">(36 holes only: adds this event to each pod you pick, from the AM and PM tabs)</span></small>
+      <details class="zdrop" id="dpods"><summary id="dpsum">Just this pod</summary><div class="zpanel" id="dpp"></div></details>
+    </div>
+    <div class="warnbox" id="dwarn" role="status"></div>
+    <label>Details <small>one line per row, such as buses or notes</small><textarea id="ddet" rows="3"></textarea></label>
+    <div class="dact">
+      <button class="btn primary" id="dsave">Save</button>
+      <button class="btn" id="dtpl">Save to library</button>
+      <button class="btn danger" id="ddel">Delete</button>
+      <span class="sp"></span>
+      <button class="btn" id="dcancel">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="ndlg">
+  <div class="dbody">
+    <h2 id="ntitle">Add news or PTO</h2>
+    <select id="nkind" hidden><option value="news">News</option><option value="pto">PTO</option></select>
+    <label id="ndayrow">Day<select id="nday"></select></label>
+    <label id="ncoachrow">Who is out<select id="ncoach"></select></label>
+    <div id="ndaysrow"><small style="font-weight:500;font-size:13px">Days out <span style="color:var(--muted);font-weight:400">(none selected means all week, full days)</span></small><div class="zpanel" id="ndays" style="padding-left:0"></div><div id="nhalf" class="nhalf"></div></div>
+    <label>Note <small id="nhint"></small><textarea id="ntext" rows="3"></textarea></label>
+    <div class="dact"><button class="btn primary" id="nsave">Save</button><button class="btn danger" id="ndel">Delete</button><span class="sp"></span><button class="btn" id="ncancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="pdlg">
+  <div class="dbody">
+    <h2>Staff unlock</h2>
+    <p class="note">Enter your PIN to open Edit and Analytics.</p>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" aria-label="PIN" style="border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:7px 9px;width:100%">
+    <div class="warnbox" id="pinerr" role="alert">That PIN didn\u2019t match. Try again.</div>
+    <div class="dact"><button class="btn primary" id="pgo">Unlock</button><span class="sp"></span><button class="btn" id="pcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="drdlg">
+  <div class="dbody">
+    <h2>Drivers</h2>
+    <p class="note">Add each driver's phone number. Coaches see it next to the trip.</p>
+    <div id="drlist"></div>
+    <button class="btn" id="dradd" type="button">+ Add driver</button>
+    <div class="dact"><button class="btn primary" id="drsave">Save</button><span class="sp"></span><button class="btn" id="drcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="prdlg">
+  <div class="dbody">
+    <h2>Print</h2>
+    <div class="prlist">
+      <label class="crow chk" id="prmine"><input type="radio" name="prsc" value="mine"> <span>My week: my AM, PM &amp; Camp pages</span></label>
+      <label class="crow chk"><input type="radio" name="prsc" value="tab" checked> <span>This tab, as shown on screen</span></label>
+      <label class="crow chk staff-only"><input type="radio" name="prsc" value="all"> <span>Everything: all pods for AM, PM &amp; Camp, one page each</span></label>
+      <label class="crow chk staff-only"><input type="radio" name="prsc" value="coaches"> <span>Every coach, one page each (AM, PM &amp; Camp)</span></label>
+    </div>
+    <label class="crow chk"><input type="checkbox" id="prnews"> <span>Add a News &amp; PTO page</span></label>
+    <p class="note">Opens your browser's print window. Choose Save as PDF there to keep a copy. Landscape works best.</p>
+    <div class="dact"><button class="btn primary" id="prgo">Print</button><span class="sp"></span><button class="btn" id="prcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="askdlg">
+  <div class="dbody">
+    <h2 id="asktitle">Please confirm</h2>
+    <p id="askmsg" style="margin:0;font-size:14px;line-height:1.45"></p>
+    <input id="askin" type="text" autocomplete="off" style="border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:8px 10px;width:100%">
+    <div class="dact"><button class="btn primary" id="askok">Yes</button><span class="sp"></span><button class="btn" id="askno">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="nwdlg">
+  <div class="dbody">
+    <h2>New week</h2>
+    <label>Week type<select id="nwtype"><option value="">Regular (AM, PM and Camp)</option><option value="Holiday">Holiday camp</option><option value="Summer">Summer camp</option></select></label>
+    <label>Copy from<select id="nwsrc"></select></label>
+    <label>New week starting <small>a Monday</small><input id="nwdate" type="date"></label>
+    <label class="crow chk" id="nwftrow" style="font-size:13px" hidden><input type="checkbox" id="nwft"> Also run the full-time AM and PM schedule this week (rare)</label>
+    <label class="crow chk" style="font-size:13px"><input type="checkbox" id="nwev" checked> Copy the blocks too, keeping zones and Functional tags, with course names left blank to fill in</label>
+    <p class="note">Brings over AM, PM and Camp with their coaches and groups, plus the day themes. A Holiday or Summer camp week replaces AM and PM with one camp schedule and a Breakthroughs tab. News, PTO, weekend notes, coverage, tee time requests, campers and Breakthroughs are not copied. The new week starts unpublished.</p>
+    <div class="dact"><button class="btn primary" id="nwgo">Create week</button><span class="sp"></span><button class="btn" id="nwcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="hndlg">
+  <div class="dbody">
+    <h2>Names on the first screen</h2>
+    <p class="note">One name per line. Coaches pick their name from this list to see their whole day. Only you can change it, from Edit mode.</p>
+    <textarea id="hntext" rows="14" spellcheck="false" style="width:100%;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:8px;font:inherit"></textarea>
+    <p class="note" id="hnnote"></p>
+    <div class="dact"><button class="btn primary" id="hngo">Save list</button><button class="btn" id="hnauto" title="Go back to listing everyone in the schedule">Use the automatic list</button><span class="sp"></span><button class="btn" id="hncancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="zpdlg">
+  <div class="dbody">
+    <h2>Assign zones</h2>
+    <p class="note">Fills in the zones for this week's Practice and Cross sport events (AM and PM). It keeps pods from sharing a zone at the same time, rotates your sets through the week, spreads zones over the semester, and gives each pod Functional once a week.</p>
+    <p class="note" id="zpnote" role="status"></p>
+    <div class="zpbar">
+      <label class="crow"><input type="checkbox" id="zprep"> Replace zones I've already set</label>
+      <span class="sp"></span>
+      <button class="btn" id="zpagain">Try another arrangement</button>
+      <button class="btn" id="zpset">Settings</button>
+    </div>
+    <div id="zpcfg" class="zpcfg" hidden>
+      <label>Zone sets, one per line<textarea id="zpsets" rows="3" spellcheck="false"></textarea></label>
+      <label>Extra Cross sport pairs, one per line<textarea id="zppairs" rows="2" spellcheck="false"></textarea></label>
+      <label>Zones to favor<input id="zpprefer" spellcheck="false"></label>
+      <label>Zones to avoid<input id="zpavoid" spellcheck="false"></label>
+      <label>Front range zones<input id="zpfront" spellcheck="false" placeholder="for example 2, 5, 6"></label>
+      <label>Back range zones<input id="zpback" spellcheck="false" placeholder="for example 9, 10, 12"></label>
+    </div>
+    <div id="zpbody"></div>
+    <div class="dact"><button class="btn primary" id="zpgo">Apply zones</button><span class="sp"></span><button class="btn" id="zpcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="hpdlg">
+  <div class="dbody">
+    <h2>Paste the hourly schedule</h2>
+    <p class="note">In Excel, select the schedule (the "Week of" rows, names and hours), copy, and paste here. Weeks that match a week in the planner are filled in, and their current hours are replaced.</p>
+    <textarea id="hptext" rows="9" spellcheck="false" placeholder="Paste here" style="width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre;overflow:auto"></textarea>
+    <div id="hpinfo" role="status"></div>
+    <div class="dact"><button class="btn primary" id="hpgo" disabled>Replace hours</button><span class="sp"></span><button class="btn" id="hpcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="pcdlg">
+  <div class="dbody">
+    <h2 id="pctitle">Paste campers</h2>
+    <p class="note">In Excel, select the camper rows (include the header row if you like), copy, and paste here. If a row holds only a coach's name, the campers under it go to that coach.</p>
+    <textarea id="pctext" rows="9" spellcheck="false" placeholder="Paste here" style="width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre;overflow:auto"></textarea>
+    <div id="pcinfo" role="status"></div>
+    <p class="note" id="pcwarn"></p>
+    <div class="dact"><button class="btn primary" id="pcgo" disabled>Replace list</button><span class="sp"></span><button class="btn" id="pccancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="tvdlg">
+  <div class="dbody">
+    <h2 id="tvtitle">Add weekend note</h2>
+    <label>Tournament<input id="tvname" type="text" autocomplete="off" placeholder="Tournament name"></label>
+    <label>Dates<input id="tvdates" type="text" autocomplete="off" placeholder="Oct 23 to 25"></label>
+    <div><small style="font-weight:500;font-size:13px">Coaches traveling</small><div class="zpanel" id="tvchips" style="padding-left:0"></div></div>
+    <label>Note <small>optional</small><textarea id="tvnote" rows="2"></textarea></label>
+    <div class="dact"><button class="btn primary" id="tvsave">Save</button><button class="btn danger" id="tvdel">Delete</button><span class="sp"></span><button class="btn" id="tvcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="cvdlg">
+  <div class="dbody">
+    <h2 id="cvtitle">Add coverage</h2>
+    <label>Course or event<input id="cvname" type="text" autocomplete="off" placeholder="Course name or tournament"></label>
+    <div class="row2" id="cvdaterow"><label>From<input type="date" id="cvfrom"></label><label>To <small>leave blank for one day</small><input type="date" id="cvto"></label></div>
+    <div class="row2" id="cvdayrow" hidden><label>From<select id="cvstart"></select></label><label>To<select id="cvend"></select></label></div>
+    <div><small style="font-weight:500;font-size:13px">Coaches covering</small><div class="zpanel" id="cvchips" style="padding-left:0"></div></div>
+    <label>Note <small>optional</small><textarea id="cvnote" rows="2"></textarea></label>
+    <div class="dact"><button class="btn primary" id="cvsave">Save</button><button class="btn danger" id="cvdel">Delete</button><span class="sp"></span><button class="btn" id="cvcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="btdlg">
+  <div class="dbody">
+    <h2 id="bttitle">Add Breakthrough</h2>
+    <label>Camper<select id="btstu"></select></label>
+    <div class="row2"><label>Day<select id="btday"></select></label><label>Session<select id="btsess"></select></label></div>
+    <div class="row2"><label>Start<input id="btstart" type="time" step="300"></label><label>Length<select id="btlen"><option value="30">30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></label></div>
+    <label>Coach<input id="btcoach" list="btcoaches" autocomplete="off" placeholder="Type or choose a coach"></label>
+    <div id="btmsgs" role="status"></div>
+    <div class="dact"><button class="btn primary" id="btsave">Save</button><button class="btn danger" id="btdel">Delete</button><span class="sp"></span><button class="btn" id="btcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="cwdlg">
+  <div class="dbody">
+    <h2>Paste the camp list</h2>
+    <p class="note">In Excel, select everything from the first coach's name down (no header row), copy, click the box below and paste. Colors, (L) leads and red names come along. This replaces every pod and camper for this week.</p>
+    <div id="cwbox" contenteditable="true" spellcheck="false" role="textbox" aria-label="Paste the camp list here" data-ph="Click here, then paste"></div>
+    <div id="cwinfo" role="status"></div>
+    <div class="dact"><button class="btn primary" id="cwgo" disabled>Replace pods and campers</button><span class="sp"></span><button class="btn" id="cwcancel">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="bcdlg">
+  <div class="dbody">
+    <h2 id="bctitle">Breakthrough slot</h2>
+    <p class="note" id="bcsub"></p>
+    <div class="dact"><button class="btn primary" id="bcadd">Add Breakthrough</button><button class="btn" id="bcoff">Mark time off</button><span class="sp"></span><button class="btn" id="bcx">Cancel</button></div>
+  </div>
+</dialog>
+
+<dialog id="atdlg">
+  <div class="dbody">
+    <h2>Auto-build Breakthroughs</h2>
+    <p class="note">Builds Full Swing, Short Game and Putting (45 minutes each) at times that fit both the camper and the coach.</p>
+    <label>Camper<select id="atstu"></select></label>
+    <label>Coach<input id="atcoach" list="btcoaches" autocomplete="off" placeholder="Any Breakthrough coach (balanced)"></label>
+    <div id="atres" role="status"></div>
+    <div class="dact"><button class="btn" id="atbuild">Build</button><button class="btn primary" id="atadd" disabled>Add these</button><span class="sp"></span><button class="btn" id="atclose">Close</button></div>
+  </div>
+</dialog>
+
+<dialog id="cdlg"><div class="dbody" id="cbody"></div></dialog>
+
+<div id="printroot"></div>
+<div class="rangeview noprint" id="rangeview">
+  <header class="rv-top">
+    <div class="rv-brand"><img src="img/img-logo-white.png" alt="IMG Academy"><span>Range Staff</span></div>
+    <div class="rv-weeks" id="rvweeks" role="group" aria-label="Week"></div>
+    <span class="rv-sp"></span>
+    <div class="rv-lay" id="rvlay" role="group" aria-label="Layout"><button data-lay="zone" aria-pressed="true">By zone</button><button data-lay="group" aria-pressed="false">By group</button></div>
+    <button class="rv-btn" id="rvprint">Print</button>
+    <button class="rv-btn" id="rvexit">Exit</button>
+  </header>
+  <div class="rv-tabs" role="tablist"><button id="rvtabS" aria-selected="true">Schedule</button><button id="rvtabH" aria-selected="false">Hourly schedule</button></div>
+  <div class="rv-days" id="rvsess" role="group" aria-label="Schedule"></div>
+  <div class="rv-days" id="rvdays" role="group" aria-label="Day"></div>
+  <main class="rv-body" id="rvbody"></main>
+</div>
+<div class="landing noprint" id="landing" hidden>
+  <div class="lbox">
+    <img class="llogo" src="img/img-logo-white.png" alt="IMG Academy">
+    <h1>Golf - Weekly Schedule</h1>
+    <p>Choose your name to see your whole day.</p>
+    <select id="lwho" aria-label="Choose your name"></select>
+    <div class="lor">or</div>
+    <button class="lstaff" id="lstaff">General Staff</button>
+    <a class="lstaff" id="lrange" href="#range" role="button">Range Staff</a>
+  </div>
+</div>
+<div class="updbadge noprint" id="updbadge" hidden></div>
+<div class="toast" id="toast"><span id="tmsg"></span><button id="tundo">Undo</button></div>
+<div class="dropveil" id="veil">Drop your Excel file to import it</div>
+
+<script src="js/vendor/xlsx.bundle.js"></script>
+<script src="js/vendor/Sortable.min.js"></script>
+<script src="js/core.js"></script>
+<script src="js/sample-data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

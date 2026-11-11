@@ -1,0 +1,38 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone preview</title>
+<style>
+body{margin:0;background:#1b2330;color:#e8edf5;font:14px system-ui,Segoe UI,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+.bar{padding:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}
+select,button{font:inherit;padding:6px 10px;border-radius:8px;border:1px solid #3a4960;background:#243044;color:#e8edf5;cursor:pointer}
+.phone{box-sizing:content-box;border:12px solid #05080d;border-radius:44px;background:#000;box-shadow:0 12px 40px rgba(0,0,0,.5);overflow:hidden;margin-bottom:24px}
+iframe{display:block;border:0;background:#fff;width:100%;height:100%}
+small{opacity:.7}
+</style>
+</head>
+<body>
+<div class="bar">
+  <label>Phone <select id="dev">
+    <option value="375x667">iPhone SE (375 x 667)</option>
+    <option value="390x844" selected>iPhone 14 (390 x 844)</option>
+    <option value="393x852">iPhone 15 (393 x 852)</option>
+    <option value="430x932">iPhone 15 Pro Max (430 x 932)</option>
+  </select></label>
+  <button id="rot">Rotate</button>
+  <button id="rel">Reload</button>
+  <small>The planner below behaves exactly like it does on a phone. Your computer's saved schedule is used.</small>
+</div>
+<div class="phone" id="ph"><iframe id="fr" src="index.html" title="Golf schedule on a phone"></iframe></div>
+<script>
+var dev=document.getElementById('dev'),ph=document.getElementById('ph'),fr=document.getElementById('fr'),land=false;
+function size(){var p=dev.value.split('x'),w=+p[0],h=+p[1];if(land){var t=w;w=h;h=t}ph.style.width=w+'px';ph.style.height=Math.min(h,window.innerHeight-90)+'px'}
+dev.onchange=size;
+document.getElementById('rot').onclick=function(){land=!land;size()};
+document.getElementById('rel').onclick=function(){fr.contentWindow.location.reload()};
+window.onresize=size;size();
+</script>
+</body>
+</html>
