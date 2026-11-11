@@ -6,8 +6,9 @@ var PPH=44;
 var state,hist=[],pre=null,edit=null,ezones=[];
 var fullDay=false,fdWin={tStart:360,tEnd:1140};
 var mode='edit',coachFilter='',anWeek='all',anGroup='players',anSplit=false,anOK=false,pinPrompt=false,pinMsg='';
-var STAFF_PIN='2937',UNLOCK_KEY='week-planner-unlocked';
-var unlocked=false;try{unlocked=sessionStorage.getItem(UNLOCK_KEY)==='1'}catch(e){}
+/* the staff PIN is no longer in this file: it is checked by the database. It is kept only for this tab's session so saves can be authorized. */
+var UNLOCK_KEY='week-planner-unlocked',PIN_KEY='week-planner-pin';
+var unlocked=false,staffPin='';try{staffPin=sessionStorage.getItem(PIN_KEY)||'';unlocked=sessionStorage.getItem(UNLOCK_KEY)==='1'&&!!staffPin}catch(e){}
 function parseHash(){
   var h='';try{h=decodeURIComponent(location.hash||'')}catch(e){h=location.hash||''}
   if(/^#analytics/.test(h)){mode='analytics'}
@@ -82,7 +83,12 @@ function load(){
   state=SAMPLE?clone(SAMPLE):blankState();
 }
 var saveT;
-function save(){clearTimeout(saveT);saveT=setTimeout(function(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}},200)}
+/* only staff keep a browser copy; a coach's view always comes from the shared schedule, so it can never overwrite staff data saved in the same browser */
+var applying=false,bootLocal=null;try{bootLocal=localStorage.getItem(KEY)}catch(e){}
+function save(){
+  if(applying||!unlocked)return;
+  clearTimeout(saveT);saveT=setTimeout(function(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}pushSoon()},200)
+}
 function pushHist(s){hist.push(s);if(hist.length>80)hist.shift();$('#bUndo').disabled=!hist.length}
 /* the faint "Updated" note in the corner follows the last saved change to the schedule */
 function touch(){state.updatedAt=Date.now()}
@@ -4305,11 +4311,22 @@ $('#tundo').onclick=undo;
 $('#bCustom').onclick=openCustom;
 function pinHash(x){var h=5381,t='wp|'+x;for(var i=0;i<t.length;i++)h=((h<<5)+h+t.charCodeAt(i))|0;return String(h)}
 function showPin(){$('#pin').value='';$('#pinerr').classList.remove('on');$('#pdlg').showModal();$('#pin').focus()}
+/* log in: the database checks the PIN, then staff load everything (including unpublished weeks) */
+var PIN_BAD='That PIN didn’t match. Try again.',PIN_NET='Couldn’t reach the shared schedule. Check your connection and try again.';
+function staffLogin(pin,onBad,onOk){
+  if(!pin){onBad(PIN_BAD);return}
+  SYNC.verify(pin).then(function(ok){
+    if(!ok){onBad(PIN_BAD);return}
+    unlocked=true;staffPin=pin;
+    try{sessionStorage.setItem(UNLOCK_KEY,'1');sessionStorage.setItem(PIN_KEY,pin)}catch(e){}
+    return remoteRefresh(false).then(onOk);
+  }).catch(function(){onBad(PIN_NET)});
+}
 function tryPin(){
-  if($('#pin').value===STAFF_PIN){
-    unlocked=true;try{sessionStorage.setItem(UNLOCK_KEY,'1')}catch(e){}
-    $('#pdlg').close();mode='edit';syncHash();render();window.scrollTo(0,0)}
-  else{$('#pinerr').classList.add('on');$('#pin').select()}
+  var e=$('#pinerr');
+  staffLogin($('#pin').value,function(msg){e.textContent=msg;e.classList.add('on');$('#pin').select()},function(){
+    $('#pdlg').close();mode='edit';syncHash();render();window.scrollTo(0,0);
+  });
 }
 /* the three-line menu: log in or out, Print and Export Excel */
 var loginOpen=false;
@@ -4324,10 +4341,10 @@ $('#mloginopen').onclick=function(e){
   setTimeout(function(){$('#mpin').focus()},0);
 };
 function menuLogin(){
-  if($('#mpin').value===STAFF_PIN){
-    unlocked=true;try{sessionStorage.setItem(UNLOCK_KEY,'1')}catch(e){}
+  var e=$('#mpinerr');
+  staffLogin($('#mpin').value,function(msg){e.textContent=msg;e.classList.add('on');$('#mpin').select()},function(){
     $('#mpin').value='';menuOpen(false);mode='edit';syncHash();render();window.scrollTo(0,0);
-  }else{$('#mpinerr').classList.add('on');$('#mpin').select()}
+  });
 }
 $('#lstaff').onclick=function(){chooseWho('staff')};
 $('#bWho').onclick=function(){setWho(null);whoApplied=true;coachFilter='';menuOpen(false);render()};
@@ -4335,8 +4352,13 @@ $('#bMenu').onclick=function(e){e.stopPropagation();menuOpen($('#menu').hidden)}
 $('#mgo').onclick=menuLogin;
 $('#mpin').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();menuLogin()}});
 $('#mlogout').onclick=function(){
-  unlocked=false;anOK=false;try{sessionStorage.removeItem(UNLOCK_KEY)}catch(e){}
+  /* send any edit still waiting to be saved before locking */
+  var oldPin=staffPin,pending=unlocked&&oldPin&&!pushBlocked&&remoteLoaded?SYNC.push(state,oldPin).catch(function(){}):Promise.resolve();
+  clearTimeout(pushT);
+  unlocked=false;anOK=false;staffPin='';try{sessionStorage.removeItem(UNLOCK_KEY);sessionStorage.removeItem(PIN_KEY)}catch(e){}
   menuOpen(false);setMode('coach');
+  /* back to the coach view: drop unpublished weeks and staff-only data from memory */
+  pending.then(function(){remoteRefresh(false)});
 };
 $('#menu').addEventListener('click',function(e){if(e.target.closest('.mitem'))menuOpen(false)});
 document.addEventListener('click',function(e){if(!$('#menu').hidden&&!e.target.closest('.menuwrap'))menuOpen(false)});
@@ -4444,30 +4466,110 @@ if(typeof Sortable!=='undefined'){
     }
   });
 }
-load();
-/* the library gets a "Play 36 holes" chip (7:00am to 5:30pm when dropped at 7:00am) */
-if(!state.templates.some(function(t){return t.holes===36}))state.templates.push({cat:'course',title:'Play 36 holes',details:'',dur:630,zones:[],teeOff:30,holes:36});
-/* Cross sport events get the zone picker (turned on once; you can switch it off in Customize) */
-if(!state.crossZones){
-  state.crossZones=true;
-  var crossCat=state.categories.filter(function(c){return c.id==='cross'})[0];
-  if(crossCat)crossCat.zones=true;
-  save();
+/* ---- shared schedule (Supabase): coaches read, staff save ---- */
+var remoteSig='',remoteLoaded=false,pushBlocked=false,pushT,pushing=false,pushAgain=false;
+function pushSoon(){
+  if(!unlocked||!staffPin||pushBlocked||!remoteLoaded)return;
+  clearTimeout(pushT);pushT=setTimeout(doPush,600);
 }
-/* Athletic Recovery and Nutrition come back as event types with a library chip each (added once) */
-if(!state.seedRecNut){
-  state.seedRecNut=true;
-  [['Athletic Recovery','recovery','#1FA6A0',60],['Nutrition','nutrition','#8AA03A',45]].forEach(function(d){
-    var cat=state.categories.filter(function(c){return String(c.name).trim().toLowerCase()===d[0].toLowerCase()})[0];
-    if(!cat){cat={id:d[1],name:d[0],color:d[2],zones:false};state.categories.splice(Math.max(0,state.categories.length-1),0,cat)}
-    if(!state.templates.some(function(t){return String(t.title).trim().toLowerCase()===d[0].toLowerCase()}))
-      state.templates.push({cat:cat.id,title:d[0],details:'',dur:d[3],zones:[]});
+function doPush(){
+  if(pushing){pushAgain=true;return}
+  if(!unlocked||!staffPin||pushBlocked||!remoteLoaded)return;
+  pushing=true;
+  SYNC.push(state,staffPin).catch(function(e){
+    if(e.code==='40001'){toast('Someone else saved this week first. Loaded the latest version; please redo your last change.',false,true);remoteRefresh(false)}
+    else if(e.code==='28000'){lockOut('The staff PIN was changed. Please log in again.')}
+    else{toast('Couldn’t save to the shared schedule. Trying again…',false,true);setTimeout(doPush,10000)}
+  }).then(function(){pushing=false;if(pushAgain){pushAgain=false;doPush()}});
+}
+function lockOut(msg){
+  unlocked=false;anOK=false;staffPin='';try{sessionStorage.removeItem(UNLOCK_KEY);sessionStorage.removeItem(PIN_KEY)}catch(e){}
+  setMode('coach');remoteRefresh(false);if(msg)toast(msg,false,true);
+}
+/* the library chips and settings that older saves don't have yet (added once) */
+function postLoad(){
+  /* the library gets a "Play 36 holes" chip (7:00am to 5:30pm when dropped at 7:00am) */
+  if(!state.templates.some(function(t){return t.holes===36}))state.templates.push({cat:'course',title:'Play 36 holes',details:'',dur:630,zones:[],teeOff:30,holes:36});
+  /* Cross sport events get the zone picker (turned on once; you can switch it off in Customize) */
+  if(!state.crossZones){
+    state.crossZones=true;
+    var crossCat=state.categories.filter(function(c){return c.id==='cross'})[0];
+    if(crossCat)crossCat.zones=true;
+    save();
+  }
+  /* Athletic Recovery and Nutrition come back as event types with a library chip each (added once) */
+  if(!state.seedRecNut){
+    state.seedRecNut=true;
+    [['Athletic Recovery','recovery','#1FA6A0',60],['Nutrition','nutrition','#8AA03A',45]].forEach(function(d){
+      var cat=state.categories.filter(function(c){return String(c.name).trim().toLowerCase()===d[0].toLowerCase()})[0];
+      if(!cat){cat={id:d[1],name:d[0],color:d[2],zones:false};state.categories.splice(Math.max(0,state.categories.length-1),0,cat)}
+      if(!state.templates.some(function(t){return String(t.title).trim().toLowerCase()===d[0].toLowerCase()}))
+        state.templates.push({cat:cat.id,title:d[0],details:'',dur:d[3],zones:[]});
+    });
+    save();
+  }
+}
+/* swap in what the database holds */
+function applyRemote(f,first){
+  var prev=state&&state.active;
+  applying=true;
+  try{
+    var st=SYNC.compose(f.rows,f.settings,f.priv,blankState());
+    if(!st.sessions.length)st.sessions=blankState().sessions;
+    st.active=prev;
+    state=migrateState(st);
+    if(!state.sessions.some(function(s){return s.id===state.active}))state.active=state.sessions[0].id;
+    postLoad();
+    SYNC.remember(f.rows,f.settings,f.priv,state);
+  }finally{applying=false}
+  remoteSig=SYNC.signature(f);remoteLoaded=true;pushBlocked=false;
+  defaultWeek();
+  if(first&&!unlocked)coachDefaultView();
+  render();if(first)afterRender();
+}
+/* first time staff log in and the shared schedule is empty: offer to upload what this browser has */
+function offerUpload(){
+  var local=null;
+  try{if(bootLocal){var o=JSON.parse(bootLocal);if(o&&o.sessions&&o.sessions.length)local=migrateState(o)}}catch(e){}
+  applying=true;
+  try{state=local||blankState();postLoad()}finally{applying=false}
+  SYNC.remember([],null,null,state);
+  remoteLoaded=true;remoteSig='';
+  defaultWeek();render();
+  if(local&&confirm('The shared schedule is empty.\n\nUpload the schedule saved in this browser so every coach sees it?')){
+    pushBlocked=false;doPush();toast('Uploading this browser’s schedule to the shared database…');
+  }else if(local){
+    pushBlocked=true;toast('Not uploaded. Changes made here stay in this browser only.',false,true);
+  }else{pushBlocked=false}
+}
+function remoteRefresh(first){
+  var staff=unlocked&&!!staffPin;
+  return (staff?SYNC.fetchAll(staffPin):SYNC.fetchPublic()).then(function(f){
+    if(staff&&SYNC.isEmpty(f))offerUpload();
+    else applyRemote(f,first);
+  }).catch(function(e){
+    if(staff&&e&&e.code==='28000'){lockOut('The staff PIN was changed. Please log in again.');return}
+    pushBlocked=true;
+    toast(staff?'Couldn’t reach the shared schedule. Showing this browser’s copy; changes will not be shared until you reload.':'Couldn’t reach the shared schedule. Showing the last copy on this device.',false,true);
   });
-  save();
 }
+/* coaches pick up the staff's changes on their own, every 30 seconds and whenever the page comes back to the front */
+function pollRemote(){
+  if(unlocked||document.hidden||!SYNC.enabled)return;
+  SYNC.fetchPublic().then(function(f){if(!unlocked&&SYNC.signature(f)!==remoteSig)applyRemote(f,false)}).catch(function(){});
+}
+setInterval(pollRemote,30000);
+document.addEventListener('visibilitychange',pollRemote);
+window.addEventListener('online',pollRemote);
+
+load();
+/* coaches never start from a browser copy or the sample: they wait for the shared schedule (staff keep their copy until it loads) */
+if(!unlocked){applying=true;state=migrateState(blankState());applying=false}
+postLoad();
 defaultWeek();
 if(!unlocked)coachDefaultView();
 render();afterRender();
+remoteRefresh(true);
 try{if(sessionStorage.getItem(RANGE_KEY)==='1')openRange()}catch(e){}
 window.__planner={get state(){return state},render:render};
 })();
