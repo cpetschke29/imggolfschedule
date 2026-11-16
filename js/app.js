@@ -138,6 +138,10 @@ function fullDaySession(wk){
       if(nameFz(coachKey(p.name))===nameFz(coachFilter)){if(!m.players&&p.players)m.players=p.players}
       else{var wl=s.name+': with '+coachKey(p.name);(m.withs=m.withs||[]).indexOf(wl)<0&&m.withs.push(wl)}
       if(!m.program&&p.program)m.program=p.program;
+      /* the program (TRAIN, COMPETE...) can differ between the AM and the PM, so each tab's program is kept with where that tab starts */
+      var plab=isCamp(s)?'CAMP':String(s.name||'').trim().toUpperCase();
+      m.progs=m.progs||[];
+      if(p.program&&!m.progs.some(function(x){return x.lab===plab}))m.progs.push({lab:plab,prog:p.program,start:s.tStart});
       p.cells.forEach(function(c,j){
         var t=m.cells[j];if(!t)return;
         var lab=isCamp(s)?'CAMP':String(s.name||'').trim().toUpperCase();
@@ -719,15 +723,18 @@ function cardHtml(x,sess,conf,ro,j){
     if(c.tee!=null)lines.push((c.teeLabel==='Shotgun'?'Shotgun at ':'Tee time at ')+fmtT(c.tee,true));
     lines.push('Pick up at '+fmtT(re0,true));
   }
-  String(c.details||'').split('\n').forEach(function(l){if(l.trim())lines.push(l.trim())});
-  var det=lines.map(esc).join('<br>');
+  /* the coach's typed note is kept apart from the automatic lines (times, zones, bus, tee time) so it can stand out */
+  var notes=[];
+  String(c.details||'').split('\n').forEach(function(l){if(l.trim())notes.push(l.trim())});
+  var det=lines.map(esc).join('<br>')+(notes.length?'<div class="cd cnote">'+notes.map(esc).join('<br>')+'</div>':'');
+  lines=lines.concat(notes);
   var cm=trip?esc(z):(fmtRange(rs0,re0)+(z?'<span class="cz"><i class="sep"> \u00B7 </i>'+esc(z)+'</span>':''));
   var tip=c.title+'\n'+fmtRange(rs0,re0)+(z?'\n'+z:'')+(lines.length?'\n'+lines.join('\n'):'')+(cf?'\n\u26A0 '+confText(cf):'')+(jt?'\n\u25CF '+jt:'');
   if(ghost)return '<div class="card ghostc" title="'+esc(tip+'\nEdit it in the '+c.from+' tab.')+'" style="--c:'+cat.color+';top:'+top+'px;height:'+hp+'px;left:calc('+(x.lane/x.lanes*100)+'% + 2px);width:calc('+(100/x.lanes)+'% - 4px)">'+
     '<div class="ct">'+esc(c.title)+'</div>'+(cm?'<div class="cm">'+cm+'</div>':'')+(det?'<div class="cd">'+det+'</div>':'')+
     (ro?'':'<div class="cact"><button class="x" data-act="delghost" data-src="'+c.src+'" title="Delete this event (it also removes the '+esc(c.from)+' part)" aria-label="Delete event">×</button></div>')+'</div>';
   var tb=(c._tagBadges||[]).map(function(n){return '<span class="ctag" style="--chip:'+tagColor(n)+'">'+esc(n)+'</span>'}).join('');
-  return '<div class="card'+(tb?' hastags':'')+(cf?' warn':'')+(c.end>sess.tEnd?' longev':'')+(split?' segev':'')+((!split&&!(c.zones&&c.zones.length))?' nozone':'')+'" data-id="'+c.id+'" data-act="edit" title="'+esc(tip)+'" style="--c:'+(c.color||cat.color)+';top:'+top+'px;height:'+hp+'px;left:calc('+(x.lane/x.lanes*100)+'% + 2px);width:calc('+(100/x.lanes)+'% - 4px)">'+
+  return '<div class="card'+(hp<42&&!split?' short':'')+(tb?' hastags':'')+(cf?' warn':'')+(c.end>sess.tEnd?' longev':'')+(split?' segev':'')+((!split&&!(c.zones&&c.zones.length))?' nozone':'')+'" data-id="'+c.id+'" data-act="edit" title="'+esc(tip)+'" style="--c:'+(c.color||cat.color)+';top:'+top+'px;height:'+hp+'px;left:calc('+(x.lane/x.lanes*100)+'% + 2px);width:calc('+(100/x.lanes)+'% - 4px)">'+
     '<div class="ct">'+esc(c.title)+'</div>'+(cm?'<div class="cm">'+cm+'</div>':'')+(det?'<div class="cd">'+det+'</div>':'')+
     (jt?'<div class="cjoin">'+esc(jt)+'</div><span class="joinbadge" title="'+esc(jt)+'" aria-label="'+esc(jt)+'"></span>':'')+
     (cf?'<span class="wbadge" aria-label="Zone overlap">\u26A0</span>':'')+
@@ -958,7 +965,7 @@ function renderGrid(){
     shown++;
     h+='<section class="pod'+(fd?' fdpod':'')+'" data-id="'+p.id+'"><div class="podh" style="grid-column:1;grid-row:1/4'+(p.color?';box-shadow:inset 6px 0 0 '+esc(p.color):'')+'">';
     if(ro){
-      h+='<div class="podid"><span class="pname">'+esc(p.name)+'</span><span class="players">'+esc(p.players)+'</span>'+(specView?'<span class="speclabel">Putting Specialist group</span>':'')+(specView||fd?'':podBtHtml(s,p)+podCamperBtHtml(s,p))+'</div>'+(p.program?'<span class="chipin chipro" style="'+chipStyle(p.program)+'">'+esc(p.program)+'</span>':'');
+      h+='<div class="podid"><span class="pname">'+esc(p.name)+'</span><span class="players">'+esc(p.players)+'</span>'+(specView?'<span class="speclabel">Putting Specialist group</span>':'')+(specView||fd?'':podBtHtml(s,p)+podCamperBtHtml(s,p))+'</div>'+progChipsHtml(p,mob);
     }else{
       h+='<div class="podid"><div class="podtop"><span class="grip" title="Drag to reorder pods">\u283F</span><input class="pname" data-p="pods.'+i+'.name" value="'+esc(p.name)+'" aria-label="Pod name">'+
         '<button class="x" data-act="delpod" data-i="'+i+'" title="Delete pod" aria-label="Delete pod">\u00D7</button></div>'+
@@ -986,7 +993,29 @@ function renderGrid(){
   h+='</div>';
   h+=wxDatalist(s);
   $('#grid').innerHTML=h;
+  placeProgChips(s);
   markToday(s);
+}
+/* A coach's full day can be COMPETE in the AM and TRAIN in the PM. When the programs differ, each is labelled with its tab:
+   on a phone they stack ("COMPETE | AM", "TRAIN | PM"); on a wide screen the PM one sits beside where the PM starts. */
+function progsDiffer(p){
+  var pr=p.progs||[];
+  return pr.length>1&&pr.some(function(x){return x.prog!==pr[0].prog});
+}
+function progChipsHtml(p,mob){
+  if(!progsDiffer(p))return p.program?'<span class="chipin chipro" style="'+chipStyle(p.program)+'">'+esc(p.program)+'</span>':'';
+  return '<div class="progstack">'+p.progs.map(function(x,k){
+    var first=k===0||mob;
+    return '<span class="chipin chipro'+(first?'':' progpm')+'" data-pstart="'+x.start+'" style="'+chipStyle(x.prog)+'">'+esc(x.prog)+' | '+esc(x.lab)+'</span>';
+  }).join('')+'</div>';
+}
+function placeProgChips(s){
+  document.querySelectorAll('#grid .progpm').forEach(function(ch){
+    var pod=ch.closest('.pod'),tl=pod&&pod.querySelector('.tl'),ph=pod&&pod.querySelector('.podh');
+    if(!tl||!ph)return;
+    var y=tl.getBoundingClientRect().top-ph.getBoundingClientRect().top+Math.max(0,((+ch.dataset.pstart)-s.tStart)*PPH/60);
+    ch.style.top=Math.round(y)+'px';
+  });
 }
 /* ---- camp: one extra tab per week with a camper roster and a Breakthroughs table ---- */
 var CAMP_COLS=[['name','Name'],['opp','Opportunity #'],['mf','M/F'],['age','Age'],['scoring','Scoring'],['country','Country'],['email','E-mail'],['pkg','Package/Product'],['arrival','Arrival'],['departure','Departure'],['owner','Opp. Owner'],['note','Notes']];
@@ -3377,6 +3406,8 @@ function teeVals(r){
   var sv=(state.tee||{})[r.key]||{};
   return [r.month,r.date,r.day,r.sess,r.holes||'',r.tee==null?'':fmtT(r.tee,true).toUpperCase(),sv.n||'',r.groups.join(' / '),r.course,sv.s||''];
 }
+/* a whole row turns light orange when Requested and light green when Confirmed */
+function teeRowClass(st){return st==='req'?'tee-req':(st==='ok'?'tee-ok':'')}
 function renderTeePage(){
   var s=cur(),wk=weekOf(s);
   teeRows=buildTeeRows();
@@ -3388,7 +3419,7 @@ function renderTeePage(){
     h+='<div class="teeblock"><div class="teeh"><b>'+esc(b.course)+'</b><span class="sp"></span><select class="teeall" data-c="'+bi+'" aria-label="Set status for every time at '+esc(b.course)+'"><option value="">Set all…</option>'+TEE_STATUS.map(function(o){return '<option value="'+(o[0]||'none')+'">'+o[1]+'</option>'}).join('')+'</select><button class="btn" data-act="teecopy" data-c="'+bi+'">Copy</button></div><div class="teescroll"><table class="teetbl"><thead><tr>'+TEE_COLS.map(function(c){return '<th>'+c+'</th>'}).join('')+'</tr></thead><tbody>';
     b.rows.forEach(function(i){
       var v=teeVals(teeRows[i]);
-      h+='<tr>'+v.map(function(x,ci){
+      h+='<tr class="'+teeRowClass(v[9])+'">'+v.map(function(x,ci){
         if(ci===6)return '<td><input class="teein" data-r="'+i+'" data-f="n" value="'+esc(x)+'" aria-label="# of times"></td>';
         if(ci===9)return '<td><select class="teein" data-r="'+i+'" data-f="s" aria-label="Status">'+TEE_STATUS.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===x?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></td>';
         return '<td>'+esc(x)+'</td>';
@@ -3428,6 +3459,8 @@ document.addEventListener('change',function(e){
   state.tee=state.tee||{};
   var o=state.tee[r.key]=state.tee[r.key]||{};
   o[t.dataset.f]=t.value.trim();save();
+  /* the colour follows the status straight away, without redrawing the page */
+  if(t.dataset.f==='s'){var tr=t.closest('tr');if(tr)tr.className=teeRowClass(o.s)}
 });
 
 /* ---- analytics ---- */

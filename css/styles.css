@@ -663,8 +663,8 @@ dialog::backdrop{background:rgba(10,16,27,.55)}
 .note{color:var(--muted);font-size:12.5px;margin:0}
 .zdrop{border:1px solid var(--line);border-radius:7px;background:var(--bg)}
 .zdrop summary{padding:7px 9px;cursor:pointer;list-style:none;font-weight:500}
-.zdrop summary::after{content:"▾";float:right;color:var(--muted)}
-.zdrop[open] summary::after{content:"▴"}
+.zdrop summary::after{content:"â–¾";float:right;color:var(--muted)}
+.zdrop[open] summary::after{content:"â–´"}
 .zpanel{display:flex;flex-wrap:wrap;gap:6px;padding:4px 9px 10px}
 .zchip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-weight:600;font-size:13px;min-width:38px}
 .zchip[aria-pressed="true"]{background:var(--navy);color:#fff;border-color:var(--navy)}
@@ -1301,3 +1301,22 @@ html:has(.landing:not([hidden])),body:has(.landing:not([hidden])){overflow:hidde
   .lbox select,.lbox .lstaff{font-size:clamp(14px,2.2dvh,17px);padding:clamp(9px,1.8dvh,13px) 14px}
 }
 @media (max-height:480px){.lbox .llogo{display:none}}
+/* short events (about 45 minutes or less): title and time share one line so the time is never cut off.
+   The title shortens with "..." first; the time always stays. Full details are in the hover/tap tooltip and the edit box. */
+.card.short{display:flex;align-items:center;gap:8px;padding-top:2px;padding-bottom:2px;flex-wrap:nowrap}
+.card.short .ct{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.card.short .cm{flex:0 0 auto;white-space:nowrap;margin-left:auto}
+.card.short .cm .cz,.card.short .cd,.card.short .cjoin{display:none}
+
+/* a typed note sits a little lower than the times and zones, slightly bolder, with a faint line above it */
+.card .cnote{margin-top:5px;padding-top:4px;border-top:1px dashed color-mix(in srgb,var(--c) 45%,transparent);font-weight:600;opacity:1}
+.card.short .cnote{display:none}
+
+/* AM / PM programs: stacked on a phone; on a wide screen the PM chip is placed beside where the PM begins (top set in JS) */
+.progstack{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.progstack .chipro{width:auto;white-space:nowrap}
+body:not(.mobile) .progstack .progpm{position:absolute;left:14px}
+
+/* tee time rows: light orange once requested, light green once confirmed */
+.teetbl tr.tee-req td{background:color-mix(in srgb,#F59A23 20%,var(--surface))}
+.teetbl tr.tee-ok td{background:color-mix(in srgb,#3FB950 20%,var(--surface))}
