@@ -61,6 +61,14 @@ function cellText(XLSX,ws,r,c){
   if(!x||x.v==null)return '';
   return String(x.w!=null?x.w:x.v).replace(/\r/g,'').trim();
 }
+/* the date of day i (0 = Monday) taken from the "Week of M/D/YY" in the tab's title, written like 11/30 */
+function dayDateText(sess,i){
+  var m=/week of\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/i.exec((sess&&sess.title)||'');
+  if(!m)return '';
+  var y=+m[3];if(y<100)y+=2000;
+  var d=new Date(y,+m[1]-1,+m[2]+i);
+  return (d.getMonth()+1)+'/'+d.getDate();
+}
 function blankTrips(nd){return {label:'Transportation trips',dates:Array(nd).fill(''),rows:[]}}
 function toHHMM(m){return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+m%60).slice(-2)}
 function fromHHMM(v){var p=String(v).split(':');return (+p[0])*60+(+p[1]||0)}
@@ -96,8 +104,9 @@ function computeTrips(state,sess){
       cell.cards.forEach(function(c){
         if(!tc[c.cat])return;
         var key=courseOf(c).toLowerCase()+'|'+c.start+'|'+c.end;
-        var g=groups[key]||(groups[key]={course:courseOf(c),start:c.start,end:c.end,tees:[],label:'',ids:[],load:'',driver:'',pods:[]});
+        var g=groups[key]||(groups[key]={course:courseOf(c),start:c.start,end:c.end,tees:[],label:'',ids:[],load:'',driver:'',pods:[],holes:0});
         g.ids.push(c.id);
+        if(!g.holes&&c.holes)g.holes=c.holes;
         if(!g.driver&&c.driver)g.driver=c.driver;
         if(c.booked)g.booked=true;
         if(c.tee!=null&&g.tees.indexOf(c.tee)<0)g.tees.push(c.tee);
@@ -472,7 +481,7 @@ function buildWorkbook(XLSX,state,opts){
     });
     var tr=r+2,t=sess.trips,tdays=computeTrips(state,sess);
     put(tr,1,t.label,S(NAVY,{b:1,color:'FFFFFF'}));put(tr,2,'',S(NAVY));
-    t.dates.forEach(function(d,i){put(tr,3+i,d,S(NAVY,{b:1,color:'FFFFFF',h:'center'}))});
+    t.dates.forEach(function(d,i){put(tr,3+i,d||dayDateText(sess,i),S(NAVY,{b:1,color:'FFFFFF',h:'center'}))});
     var nt=0;tdays.forEach(function(d){nt=Math.max(nt,d.length)});
     for(var k=0;k<nt;k++){
       var b=tr+1+k*5;

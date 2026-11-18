@@ -8,11 +8,14 @@ var fullDay=false,fdWin={tStart:360,tEnd:1140};
 var mode='edit',coachFilter='',anWeek='all',anGroup='players',anSplit=false,anOK=false,pinPrompt=false,pinMsg='';
 /* the staff PIN is no longer in this file: it is checked by the database. It is kept only for this tab's session so saves can be authorized. */
 var UNLOCK_KEY='week-planner-unlocked',PIN_KEY='week-planner-pin';
+/* camper details (everything but name, group and package) are hidden from coaches until they enter the 4-digit camper code; it lasts while the tab is open */
+var CAMPER_KEY='week-planner-camper',camperCode='',camperOK=false;try{camperCode=sessionStorage.getItem(CAMPER_KEY)||''}catch(e){}
+function canSeeCampers(){return unlocked||camperOK}
 var unlocked=false,staffPin='';try{staffPin=sessionStorage.getItem(PIN_KEY)||'';unlocked=sessionStorage.getItem(UNLOCK_KEY)==='1'&&!!staffPin}catch(e){}
 function parseHash(){
   var h='';try{h=decodeURIComponent(location.hash||'')}catch(e){h=location.hash||''}
   if(/^#analytics/.test(h)){mode='analytics'}
-  else if(/^#coach/.test(h)){mode='coach';var m=/^#coach=(.+)$/.exec(h);coachFilter=m?m[1]:'';fullDay=!!coachFilter&&!isSpecCoach(coachFilter)}
+  else if(/^#coach/.test(h)){mode='coach';var m=/^#coach=(.+)$/.exec(h);coachFilter=m?m[1]:'';fullDay=!!coachFilter&&!isSpecView(coachFilter)}
   else if(/^#news/.test(h)){mode='news'}
   else if(/^#tee/.test(h)){mode='tee'}
   else mode='edit';
@@ -25,14 +28,37 @@ function nameFz(n){return String(n||'').replace(/\(.*?\)/g,' ').replace(/\s+/g,'
 /* Kev Collins is the Putting Specialist: his schedule is the groups tagged Putting Specialist, day by day */
 function isSpecCoach(n){return /collins/i.test(String(n||''))}
 function hasSpecTag(cell){return !!cell&&(cell.tags||[]).indexOf('Putting Specialist')>=0}
+/* Matt H works the Functional zone: his schedule opens to the groups that have a Functional event, day by day (plus any group he is listed in) */
+function isFuncCoach(n){return nameFz(coachKey(n))===nameFz('Matt H')}
+function isSpecView(n){return isSpecCoach(n)||isFuncCoach(n)}
+function hasFuncZone(cell){
+  return !!cell&&(cell.cards||[]).some(function(cd){
+    return (cd.zones||[]).indexOf('Functional')>=0||(cd.segments||[]).some(function(g){return (g.zones||[]).indexOf('Functional')>=0});
+  });
+}
+/* a day tagged "Functional" works like a day tagged "Putting Specialist" */
+function hasFuncTag(cell){return !!cell&&(cell.tags||[]).some(function(t){return /^\s*functional\s*$/i.test(t)})}
+/* a day belongs to Matt H when it is tagged Functional or has an event with the Functional zone */
+function hasFuncCell(cell){return hasFuncTag(cell)||hasFuncZone(cell)}
+/* the coach leads this group, is in it, or is listed under its lead coach */
+function ownPod(p,f){
+  if(coachKey(p.name)===f)return true;
+  var k=nameFz(f);
+  return peopleOfPod(p).some(function(n){return nameFz(n)===k});
+}
+/* on a specialist's schedule, is this day of this group shown (otherwise it is greyed out)? */
+function specDay(cell,p,f){
+  f=(f===undefined)?coachFilter:f;
+  if(isFuncCoach(f))return hasFuncCell(cell)||ownPod(p,f);
+  return hasSpecTag(cell);
+}
 function podVisibleFor(p,f){
   f=(f===undefined)?coachFilter:f;
   if(!f)return true;
   if(isSpecCoach(f))return p.cells.some(hasSpecTag);
-  if(coachKey(p.name)===f)return true;
+  if(isFuncCoach(f))return ownPod(p,f)||p.cells.some(hasFuncCell);
   /* the lead coach, each coach in a camp group, and everyone listed under a lead coach all see that group */
-  var k=nameFz(f);
-  return peopleOfPod(p).some(function(n){return nameFz(n)===k});
+  return ownPod(p,f);
 }
 /* everyone who appears in the given tabs: lead coaches, the coaches under them, and each coach in a camp group */
 function staffNamesFor(sessList,withMaster){
@@ -118,8 +144,25 @@ function fillLanding(){
 /* a coach who picks their name sees their whole day: the AM and PM tabs together on one timeline */
 /* the sessions that make up a coach's day: AM, PM and the regular Camp tab (not a Summer / Holiday camp, which has its own pages) */
 function fdSessions(wk){return weekSessions(wk).filter(function(x){return !(isCamp(x)&&x.season)})}
+/* what a specialist works on in a group on one day. Both specialists work the same way:
+   - Kev: a day tagged Putting Specialist gives him that group's Practice events
+   - Matt H: a day tagged Functional gives him that group's Practice events, and any event with the Functional zone is his too
+   (if a tagged day has no Practice event, he gets that group's whole day). Matt H sees everything in a group he is in. */
+function tagDayCards(c){
+  var pr=c.cards.filter(function(cd){return cd.cat==='practice'});
+  return pr.length?pr:c.cards;
+}
+function specCardsFor(c,p){
+  var f=coachFilter;
+  if(isFuncCoach(f)){
+    if(ownPod(p,f))return c.cards;
+    var base=hasFuncTag(c)?tagDayCards(c):[];
+    return c.cards.filter(function(cd){return base.indexOf(cd)>=0||hasFuncZone({cards:[cd]})});
+  }
+  return hasSpecTag(c)?tagDayCards(c):[];
+}
 function fdCan(){
-  if(mode!=='coach'||!coachFilter||isSpecCoach(coachFilter)||!state.sessions.length)return false;
+  if(mode!=='coach'||!coachFilter||!state.sessions.length)return false;
   var wk=weekOf(cur());
   return !seasonCamp(wk)&&fdSessions(wk).filter(function(x){return !isCamp(x)}).length>1;
 }
@@ -134,24 +177,34 @@ function fullDaySession(wk){
       if(!podVisibleFor(p))return;
       /* one row for the coach, whichever pods they are in, so the AM and PM run on as one continuous day */
       var k='one',m=map[k];
-      if(!m){m=map[k]={id:'fdcoach',name:coachFilter,players:'',program:p.program||'',color:p.color,cells:base.days.map(function(){return {cards:[],tags:[],tagWhen:{},_ptoWhen:{},wxBy:{},weather:''}})};pods.push(m)}
+      /* Kev Collins and Matt H work with many groups: only their own sessions go on the day, and each one is labelled with its group */
+      var spec=isSpecView(coachFilter),own=spec&&ownPod(p,coachFilter);
+      if(!m){m=map[k]={id:'fdcoach',name:coachFilter,players:'',program:spec?'':(p.program||''),color:spec?undefined:p.color,cells:base.days.map(function(){return {cards:[],tags:[],tagWhen:{},_ptoWhen:{},wxBy:{},weather:''}})};pods.push(m)}
       if(nameFz(coachKey(p.name))===nameFz(coachFilter)){if(!m.players&&p.players)m.players=p.players}
-      else{var wl=s.name+': with '+coachKey(p.name);(m.withs=m.withs||[]).indexOf(wl)<0&&m.withs.push(wl)}
-      if(!m.program&&p.program)m.program=p.program;
-      /* the program (TRAIN, COMPETE...) can differ between the AM and the PM, so each tab's program is kept with where that tab starts */
-      var plab=isCamp(s)?'CAMP':String(s.name||'').trim().toUpperCase();
-      m.progs=m.progs||[];
-      if(p.program&&!m.progs.some(function(x){return x.lab===plab}))m.progs.push({lab:plab,prog:p.program,start:s.tStart});
+      else if(!spec||p.cells.some(function(c){return specCardsFor(c,p).length})){var wl=s.name+': with '+coachKey(p.name);(m.withs=m.withs||[]).indexOf(wl)<0&&m.withs.push(wl)}
+      if(!spec){
+        if(!m.program&&p.program)m.program=p.program;
+        /* the program (TRAIN, COMPETE...) can differ between the AM and the PM, so each tab's program is kept with where that tab starts */
+        var plab=isCamp(s)?'CAMP':String(s.name||'').trim().toUpperCase();
+        m.progs=m.progs||[];
+        if(p.program&&!m.progs.some(function(x){return x.lab===plab}))m.progs.push({lab:plab,prog:p.program,start:s.tStart});
+      }
       p.cells.forEach(function(c,j){
         var t=m.cells[j];if(!t)return;
+        var mine=spec?specCardsFor(c,p):c.cards;
+        if(spec&&!mine.length)return;
         var lab=isCamp(s)?'CAMP':String(s.name||'').trim().toUpperCase();
         /* each card remembers which tab it came from, so an AM or PM tag can sit on the right tile */
-        t.cards=t.cards.concat(c.cards.map(function(cd){var k=Object.assign({},cd);k._ses=lab;return k}));
+        t.cards=t.cards.concat(mine.map(function(cd){var k=Object.assign({},cd);k._ses=lab;if(spec&&!own)k._grp=coachKey(p.name);return k}));
         function when(map,n){var a=map[n]=map[n]||[];if(a.indexOf(lab)<0)a.push(lab)}
         (c.tags||[]).forEach(function(n){if(t.tags.indexOf(n)<0)t.tags.push(n);when(t.tagWhen,n)});
         if(!t.weather&&c.weather)t.weather=c.weather;
-        /* the AM and the PM can have different weather safety rooms, so each is kept with its session */
-        if(String(c.weather||'').trim())t.wxBy[lab]=String(c.weather).trim();
+        /* the AM and the PM can have different weather safety rooms, so each is kept with its session; with several groups each room is named */
+        if(String(c.weather||'').trim()){
+          var wv=String(c.weather).trim();
+          if(spec&&!own)wv=coachKey(p.name)+': '+wv;
+          t.wxBy[lab]=(spec&&t.wxBy[lab])?t.wxBy[lab]+' · '+wv:wv;
+        }
         ptoNames(s,p,j).forEach(function(n){t._pto=t._pto||[];if(t._pto.indexOf(n)<0)t._pto.push(n);when(t._ptoWhen,n)});
       });
     });
@@ -191,7 +244,7 @@ function fullDaySession(wk){
 function chooseWho(v){
   setWho(v);whoApplied=true;
   coachFilter=(v&&v.indexOf('c:')===0)?v.slice(2):'';
-  fullDay=!!coachFilter&&!isSpecCoach(coachFilter);
+  fullDay=!!coachFilter&&!isSpecView(coachFilter);
   coachDefaultView();
   /* opening from the name list always lands on the schedule (today's day on a phone), never the Campers or Breakthroughs pages */
   btView=false;campView=false;mDay=null;mDayWk=null;
@@ -553,6 +606,7 @@ function alertCard(id){
 
 /* ---- render ---- */
 function render(){
+  if(transOpen)renderTrans();
   PROGRAM_COLORS=state.programColors||{};
   if(rangeOpen)renderRange();
   if(mode==='analytics'&&state.analyticsPin&&!anOK&&!unlocked){mode='coach';pinPrompt=true}
@@ -563,7 +617,7 @@ function render(){
   if(!whoApplied){
     whoApplied=true;
     var w0=getWho();
-    if(!unlocked&&w0&&w0.indexOf('c:')===0&&!coachFilter){coachFilter=w0.slice(2);fullDay=!isSpecCoach(coachFilter)}
+    if(!unlocked&&w0&&w0.indexOf('c:')===0&&!coachFilter){coachFilter=w0.slice(2);fullDay=!isSpecView(coachFilter)}
   }
   var needLanding=!unlocked&&getWho()==null&&!rangeOpen;
   $('#landing').hidden=!needLanding;
@@ -645,7 +699,7 @@ function render(){
   }
   pf.style.background='';pf.style.color='';
   var cl=staffNamesFor(weekSessions(weekOf(cur())),false);
-  coachListNames().forEach(function(n){if(isSpecCoach(n)&&cl.indexOf(n)<0)cl.push(n)});cl.sort(function(a,b){return a.localeCompare(b)});
+  coachListNames().forEach(function(n){if(isSpecView(n)&&cl.indexOf(n)<0)cl.push(n)});cl.sort(function(a,b){return a.localeCompare(b)});
   /* the coach you picked stays picked when you change weeks, even if they have no group in that week: they just see nothing scheduled */
   if(coachFilter&&!cl.some(function(n){return nameFz(n)===nameFz(coachFilter)})){cl.push(coachFilter);cl.sort(function(a,b){return a.localeCompare(b)})}
   pf.innerHTML='<option value="">All coaches</option>'+cl.map(function(n){return '<option value="'+esc(n)+'"'+(coachFilter&&nameFz(n)===nameFz(coachFilter)?' selected':'')+'>'+esc(n)+'</option>'}).join('');
@@ -729,13 +783,13 @@ function cardHtml(x,sess,conf,ro,j){
   var det=lines.map(esc).join('<br>')+(notes.length?'<div class="cd cnote">'+notes.map(esc).join('<br>')+'</div>':'');
   lines=lines.concat(notes);
   var cm=trip?esc(z):(fmtRange(rs0,re0)+(z?'<span class="cz"><i class="sep"> \u00B7 </i>'+esc(z)+'</span>':''));
-  var tip=c.title+'\n'+fmtRange(rs0,re0)+(z?'\n'+z:'')+(lines.length?'\n'+lines.join('\n'):'')+(cf?'\n\u26A0 '+confText(cf):'')+(jt?'\n\u25CF '+jt:'');
+  var tip=c.title+(c._grp?'\nGroup: '+c._grp:'')+'\n'+fmtRange(rs0,re0)+(z?'\n'+z:'')+(lines.length?'\n'+lines.join('\n'):'')+(cf?'\n\u26A0 '+confText(cf):'')+(jt?'\n\u25CF '+jt:'');
   if(ghost)return '<div class="card ghostc" title="'+esc(tip+'\nEdit it in the '+c.from+' tab.')+'" style="--c:'+cat.color+';top:'+top+'px;height:'+hp+'px;left:calc('+(x.lane/x.lanes*100)+'% + 2px);width:calc('+(100/x.lanes)+'% - 4px)">'+
     '<div class="ct">'+esc(c.title)+'</div>'+(cm?'<div class="cm">'+cm+'</div>':'')+(det?'<div class="cd">'+det+'</div>':'')+
     (ro?'':'<div class="cact"><button class="x" data-act="delghost" data-src="'+c.src+'" title="Delete this event (it also removes the '+esc(c.from)+' part)" aria-label="Delete event">×</button></div>')+'</div>';
   var tb=(c._tagBadges||[]).map(function(n){return '<span class="ctag" style="--chip:'+tagColor(n)+'">'+esc(n)+'</span>'}).join('');
   return '<div class="card'+(hp<42&&!split?' short':'')+(tb?' hastags':'')+(cf?' warn':'')+(c.end>sess.tEnd?' longev':'')+(split?' segev':'')+((!split&&!(c.zones&&c.zones.length))?' nozone':'')+'" data-id="'+c.id+'" data-act="edit" title="'+esc(tip)+'" style="--c:'+(c.color||cat.color)+';top:'+top+'px;height:'+hp+'px;left:calc('+(x.lane/x.lanes*100)+'% + 2px);width:calc('+(100/x.lanes)+'% - 4px)">'+
-    '<div class="ct">'+esc(c.title)+'</div>'+(cm?'<div class="cm">'+cm+'</div>':'')+(det?'<div class="cd">'+det+'</div>':'')+
+    '<div class="ct">'+esc(c.title)+'</div>'+(c._grp?'<div class="cgrp">'+esc(c._grp)+'</div>':'')+(cm?'<div class="cm">'+cm+'</div>':'')+(det?'<div class="cd">'+det+'</div>':'')+
     (jt?'<div class="cjoin">'+esc(jt)+'</div><span class="joinbadge" title="'+esc(jt)+'" aria-label="'+esc(jt)+'"></span>':'')+
     (cf?'<span class="wbadge" aria-label="Zone overlap">\u26A0</span>':'')+
     (tb?'<div class="ctags">'+tb+'</div>':'')+
@@ -959,13 +1013,14 @@ function renderGrid(){
   var axl='';
   for(var t=Math.ceil(s.tStart/60)*60;t<=s.tEnd;t+=60)axl+='<span style="top:'+((t-s.tStart)/60*PPH)+'px">'+hourLabel(t/60)+'</span>';
   var shown=0,wx=wxMap(s);
-  var specView=ro&&isSpecCoach(coachFilter);
+  /* the group-by-group specialist layout only applies when the day is not merged (the merged full day labels each event instead) */
+  var specView=ro&&!fd&&isSpecView(coachFilter),funcView=ro&&!fd&&isFuncCoach(coachFilter);
   s.pods.forEach(function(p,i){
     if(ro&&coachFilter&&!fd&&!podVisibleFor(p))return;
     shown++;
     h+='<section class="pod'+(fd?' fdpod':'')+'" data-id="'+p.id+'"><div class="podh" style="grid-column:1;grid-row:1/4'+(p.color?';box-shadow:inset 6px 0 0 '+esc(p.color):'')+'">';
     if(ro){
-      h+='<div class="podid"><span class="pname">'+esc(p.name)+'</span><span class="players">'+esc(p.players)+'</span>'+(specView?'<span class="speclabel">Putting Specialist group</span>':'')+(specView||fd?'':podBtHtml(s,p)+podCamperBtHtml(s,p))+'</div>'+progChipsHtml(p,mob);
+      h+='<div class="podid"><span class="pname">'+esc(p.name)+'</span><span class="players">'+esc(p.players)+'</span>'+(specView&&!(funcView&&ownPod(p,coachFilter))?'<span class="speclabel">'+(funcView?'Functional group':'Putting Specialist group')+'</span>':'')+(specView||fd?'':podBtHtml(s,p)+podCamperBtHtml(s,p))+'</div>'+progChipsHtml(p,mob);
     }else{
       h+='<div class="podid"><div class="podtop"><span class="grip" title="Drag to reorder pods">\u283F</span><input class="pname" data-p="pods.'+i+'.name" value="'+esc(p.name)+'" aria-label="Pod name">'+
         '<button class="x" data-act="delpod" data-i="'+i+'" title="Delete pod" aria-label="Delete pod">\u00D7</button></div>'+
@@ -977,8 +1032,8 @@ function renderGrid(){
     p.cells.forEach(function(c,j){
       if(mob&&j!==md)return;
       var col='grid-column:'+(3+j)+';';
-      var offDay=specView&&!hasSpecTag(c);
-      h+='<div class="tagrow" style="'+col+'grid-row:1">'+(offDay?'':tagsHtml(c,i,j,ro,c._pto||ptoNames(s,p,j)))+(specView&&!offDay?'<span class="tagchip" style="--chip:#8E5BD0">with '+esc(coachKey(p.name))+'</span>':'')+'</div>'+
+      var offDay=specView&&!specDay(c,p);
+      h+='<div class="tagrow" style="'+col+'grid-row:1">'+(offDay?'':tagsHtml(c,i,j,ro,c._pto||ptoNames(s,p,j)))+(specView&&!offDay&&!(funcView&&ownPod(p,coachFilter))?'<span class="tagchip" style="--chip:'+(funcView?'#1C8FA8':'#8E5BD0')+'">with '+esc(coachKey(p.name))+'</span>':'')+'</div>'+
         '<div class="tlcell'+(offDay?' offday':'')+'" style="'+col+'grid-row:2"><div class="tl" data-i="'+i+'" data-j="'+j+'" style="height:'+H+'px;background-position:0 '+off+'px">'+layout(offDay?[]:c.cards.concat(ghostsFor(s,p,j))).map(function(x){return cardHtml(x,s,conf,ro,j)}).join('')+'</div></div>'+
         '<div class="foot" style="'+col+'grid-row:3">'+(ro?podCamperBtHtml(s,p,j)+'<div class="wxro'+(wx[i+'|'+j]?' warn':'')+'" title="'+esc(wx[i+'|'+j]?c.weather+' is also the weather safety spot for '+wx[i+'|'+j].join(', '):'')+'">'+(c.weather?(wx[i+'|'+j]?'\u26A0 ':'')+'Weather safety: '+wxText(c):'')+'</div>':
           podCamperBtHtml(s,p,j)+'<button class="add" data-act="add" data-i="'+i+'" data-j="'+j+'">+ Add event</button>'+
@@ -1105,6 +1160,8 @@ function campTable(p,i,ks,ro,split,cs){
     var c=p.campers[k];
     h+='<tr>'+CAMP_COLS.map(function(f){
       var v=c[f[0]]||'',path='pods.'+i+'.campers.'+k+'.'+f[0];
+      /* locked: only the name and package are real; the rest is a blurred placeholder, never the actual data */
+      if(ro&&!canSeeCampers()&&f[0]!=='name'&&f[0]!=='pkg')return '<td><span class="cblur" aria-hidden="true">••••••</span></td>';
       if(ro)return '<td'+(f[0]==='name'&&c.vip?' class="vip"':'')+'>'+esc(f[0]==='pkg'&&c.pkgFull?c.pkgFull:v)+'</td>';
       if(f[0]==='pkg')return '<td><select class="campin" data-cp="'+path+'" aria-label="Package/Product">'+['','Core','Total Athlete','Game Changer','Breakthrough'].concat(v&&PKGS.indexOf(v)<0?[v]:[]).map(function(o){return '<option'+(o===v?' selected':'')+'>'+esc(o)+'</option>'}).join('')+'</select>'+(c.pkgFull&&c.pkgFull!==v?'<small class="pkgfull">'+esc(c.pkgFull)+'</small>':'')+'</td>';
       if(f[0]==='name')return '<td class="campnamecell"><span class="cgrip" draggable="true" data-ci="'+i+'" data-ck="'+k+'" title="Drag to another group or coach" aria-label="Drag to move this camper">⠿</span><button class="vipbtn'+(c.vip?' on':'')+'" data-act="vip" data-i="'+i+'" data-k="'+k+'" title="VIP: shows this name in red for everyone" aria-label="Mark as VIP">★</button><input class="campin campname'+(c.vip?' vip':'')+'" data-cp="'+path+'" value="'+esc(v)+'" aria-label="Name"></td>';
@@ -1193,7 +1250,8 @@ function renderCamp(full){
   var roster=!s.season||campView||!!full;
   var ro=mode==='coach';
   s.bt=s.bt||[];
-  var h='<div class="sect"><h2 class="display">Campers</h2></div>'+(ro?'':'<div class="campbar"><button class="btn primary" data-act="pastecw" title="Paste the whole camp list. Colors, leads and red names come along.">Paste camp list from Excel</button><span class="note">Replaces every pod and camper for this week. Schedule blocks stay with the pods that match by color.</span></div>')+'<div class="campsec">',shown=0;
+  var lockBar=(ro&&!canSeeCampers())?'<div class="camplock noprint"><span class="clk" aria-hidden="true">🔒</span><div class="cltx"><b>Camper details are locked</b><small>Names and packages are shown. Enter the 4-digit code to see the rest.</small></div><input id="campcode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" placeholder="••••" aria-label="4-digit camper code"><button type="button" class="btn primary" data-unlock="camp">Unlock</button><span class="camperr" id="camperr" role="alert"></span></div>':'';
+  var h='<div class="sect"><h2 class="display">Campers</h2></div>'+lockBar+(ro?'':'<div class="campbar"><button class="btn primary" data-act="pastecw" title="Paste the whole camp list. Colors, leads and red names come along.">Paste camp list from Excel</button><span class="note">Replaces every pod and camper for this week. Schedule blocks stay with the pods that match by color.</span></div>')+'<div class="campsec">',shown=0;
   s.pods.forEach(function(p,i){
     if(ro&&coachFilter&&!podVisibleFor(p))return;
     shown++;p.campers=p.campers||[];
@@ -1368,6 +1426,10 @@ function coachRunTooLong(others,coach,a,b){
 }
 function validateBT(s,bt,ex,pool){
   var E=[],W=[],a=bt.start,b=bt.end,j=+bt.day,wk=weekOf(s),gapShort=null;
+  /* A WITB you add or move yourself (Mike has no group, so you set his schedule) may sit during the camper's program: that is only a warning
+     and it is not a "paid" time. Lessons with a coach keep the strict rules. A course trip is never allowed, because the camper is off site. */
+  var manual=ex!=='tmp'&&bt.session==='WIB',inProg=false;
+  var PROG_NOTE=' This is during program, so it is not a paid time.';
   if(!bt.student){E.push('Choose a camper.');return {E:E,W:W,paid:false}}
   var pk=camperPkg(s,bt.student);
   if(!btEligiblePkg(pk))E.push(pk?bt.student+' has the '+pk+' package. Breakthroughs are only for Game Changer or Breakthrough.':'Set '+bt.student+'’s package first. Breakthroughs are only for Game Changer or Breakthrough.');
@@ -1395,7 +1457,11 @@ function validateBT(s,bt,ex,pool){
   }
   var cb=camperBusy(s,j,bt.student);
   if(!cb.found)W.push(bt.student+' is not in a camp group, so their program was not checked.');
-  cb.list.forEach(function(x){if(a<x.b&&x.a<b)E.push(bt.student+(x.leave&&b>x.a&&b<=x.a+BT_GAP?' would be leaving for a course (needs 5 minutes): ':' is in ')+x.why+'.')});
+  cb.list.forEach(function(x){
+    if(!(a<x.b&&x.a<b))return;
+    var msg=bt.student+(x.leave&&b>x.a&&b<=x.a+BT_GAP?' would be leaving for a course (needs 5 minutes): ':' is in ')+x.why+'.';
+    if(manual&&!x.leave){W.push(msg+PROG_NOTE);inProg=true}else E.push(msg);
+  });
   cb.lunch.forEach(function(L){
     if(!(a<L.b&&L.a<b))return;
     var ivs=mine.map(function(r){return [Math.max(L.a,r.start),Math.min(L.b,r.end)]}).concat([[Math.max(L.a,a),Math.min(L.b,b)]]).filter(function(v){return v[1]>v[0]}).sort(function(x,y){return x[0]-y[0]});
@@ -1408,7 +1474,7 @@ function validateBT(s,bt,ex,pool){
     if(b-a!==30)W.push('WITB sessions are 30 minutes.');
     if(!((a>=480&&a<=690)||(a>=780&&a<=900)))W.push('Mike usually runs WITB from 8:00 to 11:30 and 1:00 to 3:00.');
     others.forEach(function(r){if(r.session==='WIB'&&a<r.end&&r.start<b)E.push('Mike already has '+r.student+' at '+fmtRange(r.start,r.end)+'.')});
-    return {E:E,W:W,paid:!E.length,gap:null};
+    return {E:E,W:W,paid:!E.length&&!inProg,gap:null};
   }
   if(!coach)E.push('Choose a coach.');
   else if(!btCoachListFor(s).some(function(n){return normName(n)===normName(coach)}))E.push(coach+' is not on the Breakthrough coaches list'+(s.season?' for this week':'')+'.');
@@ -1441,7 +1507,7 @@ function validateBT(s,bt,ex,pool){
     }else if(!kb.found)W.push('No schedule found for '+coach+', so only their other Breakthroughs were checked.');
     else if(kb.col&&!kb.list.length)W.push(coach+' has no Putting Specialist group on this day, so he is free.');
   }
-  return {E:E,W:W,paid:!E.length&&!!coach,gap:gapShort};
+  return {E:E,W:W,paid:!E.length&&!!coach&&!inProg,gap:gapShort};
 }
 /* Campers who can have Breakthroughs (Game Changer or Breakthrough package). */
 function btCamperList(s){
@@ -1568,29 +1634,9 @@ function btHist(s,stu){
   });
   return {n:n,prev:prev};
 }
-/* WITB with Mike: the earliest open 30 minute spot, on the day that has the fewest so far */
-function autoWitb(s,stu,pool){
-  var best=null,starts=WITB_STARTS;
-  if(btFree){starts=[];for(var q=480;q<=900;q+=15)if(q<=690||q>=780)starts.push(q)}
-  for(var d=0;d<s.days.length;d++)for(var i=0;i<starts.length;i++){
-    var st=starts[i],c={id:'tmp',day:d,start:st,end:st+30,student:stu,coach:'Mike',session:'WIB'};
-    var v=validateBT(s,c,'tmp',pool);if(v.E.length)continue;
-    /* stack WITB as early in the week as possible so Mike is free for the last days */
-    var score=d*10000+st+(v.W.length?50000:0);
-    if(!best||score<best.score)best={score:score,c:c};
-  }
-  return best?{day:best.c.day,start:best.c.start,end:best.c.end,student:stu,coach:'Mike',session:'WIB'}:null;
-}
-/* the three lessons plus WITB when this is a Holiday or Summer week */
+/* Auto-build makes the three lessons only. WITB with Mike is left out on purpose: it is added by hand, so Mike's time can be set around each camper. */
 function autoPickAll(s,stu,chosen){
-  var r=autoPick(s,stu,chosen);
-  if(seasonCamp(weekOf(s))&&!s.bt.some(function(x){return x.student===stu&&x.session==='WIB'})){
-    btMemo={};
-    var w=autoWitb(s,stu,s.bt.concat(r.out));
-    btMemo=null;
-    if(w)r.out.push(w);else r.miss.push('WIB');
-  }
-  return r;
+  return autoPick(s,stu,chosen);
 }
 /* Auto-build: three 45 minute lessons for one camper with one coach. */
 var btProposed=[];
@@ -1969,9 +2015,8 @@ function autoBuildAll(){
     (gaps.length?' '+gaps.length+' could not be placed. See the list on this tab.':(total?' Everyone is fully scheduled.':'')),true,gaps.length>0);
 }
 function btNeeds(s,n){
-  var o=['Full Swing','Short Game','Putting'].filter(function(t){return !s.bt.some(function(r){return r.student===n&&r.session===t})});
-  if(!s.bt.some(function(r){return r.student===n&&r.session==='WIB'}))o.push('WIB');
-  return o;
+  /* WITB is not auto-built, so it is never reported as missing */
+  return ['Full Swing','Short Game','Putting'].filter(function(t){return !s.bt.some(function(r){return r.student===n&&r.session===t})});
 }
 function btCoachOf(s,n){var r=s.bt.filter(function(x){return x.student===n&&x.session!=='WIB'&&x.coach})[0];return r?r.coach:''}
 function btAdd(s,out){out.forEach(function(x){s.bt.push({id:uid(),day:x.day,start:x.start,end:x.end,student:x.student,coach:x.coach,session:x.session})});return out.length}
@@ -2289,10 +2334,11 @@ document.addEventListener('change',function(e){
 function renderTrips(){
   var s=cur(),t=s.trips,nd=s.days.length,ro=mode==='coach';
   var days=computeTrips(state,s),nt=0;
-  if(ro&&coachFilter)days=days.map(function(d,j){return d.filter(function(g){return g.pods.some(function(n){if(isSpecCoach(coachFilter)){return s.pods.some(function(p){return p.name===n&&hasSpecTag(p.cells[j])})}return s.pods.some(function(p){return p.name===n&&podVisibleFor(p)})})})});
+  if(ro&&coachFilter)days=days.map(function(d,j){return d.filter(function(g){return g.pods.some(function(n){if(isSpecView(coachFilter)){return s.pods.some(function(p){return p.name===n&&specDay(p.cells[j],p)})}return s.pods.some(function(p){return p.name===n&&podVisibleFor(p)})})})});
   days.forEach(function(d){nt=Math.max(nt,d.length)});
-  var h='<div class="gridin" style="--nd:'+nd+'"><div class="trh">'+(ro?'<span class="tlabel">'+esc(t.label)+'</span>':'<input class="tlabel" data-p="trips.label" value="'+esc(t.label)+'" aria-label="Transportation heading">')+'<div></div>';
-  t.dates.forEach(function(d,i){h+=ro?'<span class="tdate">'+esc(d)+'</span>':'<input class="tdate" data-p="trips.dates.'+i+'" value="'+esc(d)+'" placeholder="Date" aria-label="Trip date">'});
+  var h='<div class="gridin" style="--nd:'+nd+'"><div class="trh">'+(ro?'<span class="tlabel">'+esc(t.label)+'</span>':'<input class="tlabel" data-p="trips.label" value="'+esc(t.label)+'" aria-label="Transportation heading">')+'<div class="tlgo">'+(ro||!unlocked?'':'<button type="button" class="tlopen" data-trans="open" title="Open the week’s transportation page" aria-label="Open the transportation page">↗</button>')+'</div>';
+  /* an empty date fills in from the week (Monday 11/30, Tuesday 12/1...); a date you type is kept */
+  t.dates.forEach(function(d,i){d=d||dayDateText(s,i);h+=ro?'<span class="tdate">'+esc(d)+'</span>':'<input class="tdate" data-p="trips.dates.'+i+'" value="'+esc(d)+'" placeholder="Date" aria-label="Trip date">'});
   h+='</div>';
   if(!nt)h+='<div class="empty">No bus trips yet. Add an On course event and its trip appears here.</div>';
   for(var k=0;k<nt;k++){
@@ -2358,7 +2404,8 @@ function locked(){return !unlocked||(mode==='coach'&&!!state.coachLocked)}
 /* only a logged-in staff member can change the schedule. For anyone else the schedule area ignores typing, dragging, double-clicks and every button except the tabs. */
 (function(){
   var AREA='#boardwrap,#btpage,.lib,#sesstitle,#rvbody',OK={tab:1,camptab:1,bttab:1,fullday:1};
-  function inArea(e){var t=e.target;return !!(t&&t.closest&&t.closest(AREA))}
+  /* the camper unlock bar is the one place in this area where a coach may type (it only unlocks viewing; it can't change the schedule) */
+  function inArea(e){var t=e.target;return !!(t&&t.closest&&t.closest(AREA)&&!t.closest('.camplock,.hm-filter'))}
   ['input','change','dblclick','dragstart','drop','dragover','paste','cut','keydown'].forEach(function(n){
     window.addEventListener(n,function(e){
       if(unlocked||!inArea(e))return;
@@ -3463,6 +3510,166 @@ document.addEventListener('change',function(e){
   if(t.dataset.f==='s'){var tr=t.closest('tr');if(tr)tr.className=teeRowClass(o.s)}
 });
 
+/* ---- the week's transportation page (staff only; opened from the Transportation section in Edit mode) ----
+   Every scheduled trip (AM, PM, Camp) plus extra trips you add, like a weekend round. Students = tee times booked on the Tee Times page x 4.
+   Van for 8 or fewer, bus for 9 or more; you can change either. */
+var transOpen=false,xtEdit=null,TRANS_SECS=['AM','PM','Camp'],TRANS_EXTRA='Weekend / Extra';
+function tripDateLabel(wk,j){
+  var d=weekStart(wk);if(!d)return '';
+  var x=new Date(d.getFullYear(),d.getMonth(),d.getDate()+j);
+  return x.getDate()+'-'+MONTHS[x.getMonth()].slice(0,3);
+}
+function tripTime(m){return m==null?'':fmtT(m,true)}
+/* tee times booked for this trip x 4; if none are entered yet, a number typed in the trip's students box */
+function tripStudents(s,j,g,wk){
+  var sl=isCamp(s)?(g.start<720?'AM':'PM'):s.name,n=0,any=false;
+  (g.tees.length?g.tees:[null]).forEach(function(t){
+    var key=wk+'|'+[sl,j,g.course.toLowerCase(),t==null?'b'+g.start:t].join('|');
+    var v=parseInt(((state.tee||{})[key]||{}).n,10);
+    if(v>0){n+=v;any=true}
+  });
+  if(any)return n*4;
+  var m=/(\d+)\s*(?:students?|kids|players)/i.exec(g.load||'');
+  return m?+m[1]:null;
+}
+function tripAutoMode(st){return st==null||st===''?'':(+st<=8?'Van':'Bus')}
+function transRows(wk){
+  var rows=[];
+  weekSessions(wk).forEach(function(s){
+    computeTrips(state,s).forEach(function(d,j){d.forEach(function(g){
+      var st=tripStudents(s,j,g,wk),key=wk+'|'+s.name+'|'+j+'|'+g.course.toLowerCase()+'|'+g.start;
+      var coaches=g.pods.map(function(n){
+        var p=s.pods.filter(function(x){return x.name===n})[0];
+        return p?(String(p.players||'').trim()?coachKey(p.name)+' - '+String(p.players).trim().replace(/\s*\n\s*/g,', '):p.name):n;
+      }).join(' / ');
+      var tees=g.tees.slice().sort(function(a,b){return a-b}).map(tripTime).join(' / ')+(g.tees.length&&g.label==='Shotgun'?' SG':'');
+      rows.push({sec:isCamp(s)?'Camp':s.name,j:j,dayName:dayName(s,j),dep:g.start,tees:tees,pick:g.end,holes:g.holes||'',course:g.course,students:st,
+        key:key,mode:((state.transMode||{})[key])||tripAutoMode(st),booked:!!g.booked,ids:g.ids.join(','),coaches:coaches});
+    })});
+  });
+  (state.extraTrips||[]).filter(function(x){return x.week===wk}).forEach(function(x){
+    var st=(x.students===''||x.students==null)?null:+x.students;
+    rows.push({sec:TRANS_EXTRA,j:+x.day||0,dayName:DAYNAMES[+x.day||0],dep:x.dep,tees:tripTime(x.tee),pick:x.pick,holes:x.holes||'',course:x.course,students:st,
+      xid:x.id,mode:x.mode||tripAutoMode(st),booked:!!x.booked,coaches:x.coaches||''});
+  });
+  var order=TRANS_SECS.concat([]);
+  rows.forEach(function(r){if(order.indexOf(r.sec)<0&&r.sec!==TRANS_EXTRA)order.push(r.sec)});
+  order.push(TRANS_EXTRA);
+  rows.sort(function(a,b){return order.indexOf(a.sec)-order.indexOf(b.sec)||a.j-b.j||((a.dep==null?1e9:a.dep)-(b.dep==null?1e9:b.dep))});
+  return rows;
+}
+var TRANS_COLS=['Date','Day','Students','Mode','Departure','Start Time','Pick Up','Holes','Destination','Coaches','Booked'];
+function transSectionsHtml(wk,rows,kind){
+  var screen=kind==='screen',secs=[],map={};
+  rows.forEach(function(r){if(!map[r.sec]){map[r.sec]={name:r.sec,rows:[]};secs.push(map[r.sec])}map[r.sec].rows.push(r)});
+  return secs.map(function(sc){
+    var h='<section class="transsec"><h3>'+esc(sc.name)+'</h3>'+(screen?'<div class="teescroll">':'')+'<table class="transtbl"'+(screen?'':' border="1" cellpadding="4" style="border-collapse:collapse"')+'><thead><tr>'+
+      TRANS_COLS.map(function(c){return '<th>'+c+'</th>'}).join('')+(screen?'<th></th>':'')+'</tr></thead><tbody>';
+    sc.rows.forEach(function(r){
+      var modeCell=screen
+        ?'<select class="transmode" '+(r.xid?'data-xm="'+esc(r.xid)+'"':'data-k="'+esc(r.key)+'"')+' aria-label="Van or bus"><option value=""'+(r.mode?'':' selected')+'>—</option><option'+(r.mode==='Van'?' selected':'')+'>Van</option><option'+(r.mode==='Bus'?' selected':'')+'>Bus</option></select>'
+        :esc(r.mode);
+      var bookCell=screen
+        ?'<label class="tbook"><input type="checkbox" class="'+(r.xid?'xtbook" data-id="'+esc(r.xid):'tripbook" data-ids="'+esc(r.ids))+'"'+(r.booked?' checked':'')+' aria-label="Booked"> Booked</label>'
+        :(r.booked?'✓ Booked':'');
+      h+='<tr class="'+(r.booked?'tt-book':'')+'"><td>'+esc(tripDateLabel(wk,r.j))+'</td><td class="l">'+esc(r.dayName)+'</td><td>'+(r.students==null?'':esc(r.students))+'</td><td>'+modeCell+'</td><td>'+esc(tripTime(r.dep))+'</td><td>'+esc(r.tees)+'</td><td>'+esc(tripTime(r.pick))+'</td><td>'+esc(r.holes)+'</td><td>'+esc(r.course)+'</td><td class="l">'+esc(r.coaches)+'</td><td>'+bookCell+'</td>'+
+        (screen?'<td>'+(r.xid?'<button type="button" class="btn" data-xtedit="'+esc(r.xid)+'">Edit</button>':'')+'</td>':'')+'</tr>';
+    });
+    return h+'</tbody></table>'+(screen?'</div>':'')+'</section>';
+  }).join('');
+}
+function renderTrans(){
+  var el=$('#transview');el.classList.toggle('on',transOpen);
+  if(!transOpen)return;
+  var wk=weekOf(cur()),rows=transRows(wk);
+  $('#tvweek').textContent=weekLabel(wk);
+  $('#tvbody').innerHTML=(rows.length?transSectionsHtml(wk,rows,'screen')
+    :'<p class="rv-empty">No trips for this week yet. Add an On course event to a schedule, or click + Add trip.</p>')+
+    '<p class="note tvnote">Scheduled trips come from the On course events and can’t be edited here. Students are the tee times booked on the Tee Times page times 4. Van is 8 or fewer, bus is 9 or more; change either with the Van or bus box.</p>';
+}
+function openTrans(){if(!unlocked)return;transOpen=true;renderTrans()}
+function closeTrans(){transOpen=false;renderTrans()}
+function openXt(id){
+  var wk=weekOf(cur()),it=id?(state.extraTrips||[]).filter(function(x){return x.id===id})[0]:null;
+  xtEdit=it?it.id:null;
+  $('#xttitle').textContent=it?'Edit trip':'Add trip';
+  $('#xtday').innerHTML=DAYNAMES.map(function(n,i){return '<option value="'+i+'">'+esc(n)+(tripDateLabel(wk,i)?' · '+esc(tripDateLabel(wk,i)):'')+'</option>'}).join('');
+  $('#xtday').value=String(it?(+it.day||0):5);
+  var cl=[];(state.courses18||[]).concat(state.courses9||[]).forEach(function(n){if(cl.indexOf(n)<0)cl.push(n)});
+  $('#xtcourses').innerHTML=cl.map(function(n){return '<option value="'+esc(n)+'">'}).join('');
+  $('#xtcourse').value=it?it.course:'';
+  $('#xtholes').value=it&&it.holes?it.holes:'';
+  $('#xtstu').value=it&&it.students!=null&&it.students!==''?it.students:'';
+  $('#xtdep').value=it&&it.dep!=null?toHHMM(it.dep):'';
+  $('#xttee').value=it&&it.tee!=null?toHHMM(it.tee):'';
+  $('#xtpick').value=it&&it.pick!=null?toHHMM(it.pick):'';
+  $('#xtmode').value=it?(it.mode||''):'';
+  $('#xtcoach').value=it?it.coaches||'':'';
+  $('#xtdel').style.display=it?'':'none';
+  $('#xtdlg').showModal();
+  if(!it)$('#xtcourse').focus();
+}
+function saveXt(){
+  var course=$('#xtcourse').value.trim();
+  if(!course){$('#xtcourse').focus();return}
+  var tm=function(id){var v=$(id).value;return v?fromHHMM(v):null};
+  var it={id:xtEdit||uid(),week:weekOf(cur()),day:+$('#xtday').value,course:course,holes:+$('#xtholes').value||0,
+    students:$('#xtstu').value===''?null:+$('#xtstu').value,mode:$('#xtmode').value,dep:tm('#xtdep'),tee:tm('#xttee'),pick:tm('#xtpick'),coaches:$('#xtcoach').value.trim()};
+  $('#xtdlg').close();
+  mutate(function(){
+    state.extraTrips=state.extraTrips||[];
+    var ix=-1;state.extraTrips.forEach(function(x,k){if(x.id===it.id)ix=k});
+    if(ix>=0){it.week=state.extraTrips[ix].week;if(state.extraTrips[ix].booked)it.booked=true;state.extraTrips[ix]=it}else state.extraTrips.push(it);
+  });
+}
+function copyTrans(){
+  var wk=weekOf(cur()),rows=transRows(wk);
+  if(!rows.length){toast('No trips to copy for this week.');return}
+  var box=document.createElement('div');
+  box.style.cssText='position:fixed;left:-9999px;top:0';
+  box.innerHTML='<p><b>Week of '+esc(wk)+'</b></p>'+transSectionsHtml(wk,rows,'plain').replace(/<h3>/g,'<p><b>').replace(/<\/h3>/g,'</b></p>');
+  document.body.appendChild(box);
+  var rg=document.createRange();rg.selectNodeContents(box);
+  var sl=window.getSelection();sl.removeAllRanges();sl.addRange(rg);
+  var ok=false;try{ok=document.execCommand('copy')}catch(e){}
+  sl.removeAllRanges();document.body.removeChild(box);
+  toast(ok?'Copied. Paste it into Excel or an email.':'Copy failed. Try again.');
+}
+function printTrans(){
+  var wk=weekOf(cur()),rows=transRows(wk);
+  if(!rows.length){toast('No trips to print for this week.');return}
+  runPrint(['<section class="pp"><div class="pph"><img src="img/img-logo-white.png" alt=""><div><b>Transportation</b><span>'+esc(weekLabel(wk))+'</span></div></div><div class="ppg">'+transSectionsHtml(wk,rows,'plain')+'</div></section>']);
+}
+document.addEventListener('click',function(e){
+  var o=e.target.closest&&e.target.closest('[data-trans="open"]');
+  if(o){e.preventDefault();openTrans();return}
+  var ed=e.target.closest&&e.target.closest('[data-xtedit]');
+  if(ed&&transOpen){openXt(ed.dataset.xtedit);return}
+});
+$('#tvclose').onclick=closeTrans;
+$('#tvadd').onclick=function(){openXt(null)};
+$('#tvcopy').onclick=copyTrans;
+$('#tvprint').onclick=printTrans;
+$('#xtsave').onclick=saveXt;
+$('#xtcancel').onclick=function(){$('#xtdlg').close()};
+$('#xtdel').onclick=function(){var id=xtEdit;$('#xtdlg').close();mutate(function(){state.extraTrips=(state.extraTrips||[]).filter(function(x){return x.id!==id})},'Trip removed.')};
+$('#xtdlg').addEventListener('mousedown',function(e){if(e.target===this)this.close()});
+document.addEventListener('change',function(e){
+  var t=e.target;if(!t.classList||!unlocked)return;
+  if(t.classList.contains('transmode')){
+    var k=t.dataset.k,xm=t.dataset.xm,v=t.value;
+    mutate(function(){
+      if(xm){var it=(state.extraTrips||[]).filter(function(x){return x.id===xm})[0];if(it)it.mode=v}
+      else{state.transMode=state.transMode||{};if(v)state.transMode[k]=v;else delete state.transMode[k]}
+    });
+    return;
+  }
+  if(t.classList.contains('xtbook')){
+    var id=t.dataset.id,on=t.checked;
+    mutate(function(){var it=(state.extraTrips||[]).filter(function(x){return x.id===id})[0];if(it){if(on)it.booked=true;else delete it.booked}});
+  }
+});
+
 /* ---- analytics ---- */
 function weekOf(x){var m=/week of\s*([\d\/\.\-]+)/i.exec(x.title||'');return m?m[1]:'No week label'}
 function bumpWeek(t){
@@ -4023,6 +4230,7 @@ function printPage(s,filter,part){
     var tmp=document.createElement('div');tmp.innerHTML=html;
     tmp.querySelectorAll('.nowline,.todaytag').forEach(function(n){n.remove()});
     tmp.querySelectorAll('.today').forEach(function(n){n.classList.remove('today')});
+    tmp.querySelectorAll('.camplock').forEach(function(n){n.remove()});
     /* typed boxes print as plain text so long names are never cut off */
     tmp.querySelectorAll('input.campin').forEach(function(i){
       var sp=document.createElement('span');sp.className='campval'+(i.classList.contains('vip')?' vip':'');sp.textContent=i.getAttribute('value')||'';i.parentNode.replaceChild(sp,i);
@@ -4142,12 +4350,79 @@ function rangeSessionHtml(s,onlyDay){
 function rangeSessions(wk){
   /* AM and PM only: camp is shown inside them */
   return weekSessions(wk).filter(function(x){return !isCamp(x)||x.season}).sort(function(a,b){return a.tStart-b.tStart});
-}function renderRange(){
+}
+/* ---- phone: the Driving Range tab. Only the zones where balls are placed, and who is on each one through the day (no sideways scrolling) ---- */
+var RANGE_BALL_ZONES=['2','5','11','12'],rangeMobView='range';
+function rangeBallsHtml(wk,cs,j){
+  var camp=weekSessions(wk).filter(isCamp)[0],byZone={};
+  RANGE_BALL_ZONES.forEach(function(z){byZone[z]=[]});
+  function add(label,cards){
+    (cards||[]).forEach(function(c){
+      var color=catOf(c.cat).color;
+      function put(zs,st,en){(zs||[]).forEach(function(z){if(byZone[z])byZone[z].push({who:label,title:c.title,start:st,end:en,color:color})})}
+      /* a split event uses different zones in different parts of its block */
+      if(c.segments&&c.segments.length)c.segments.forEach(function(g){put(g.zones,g.start,g.end)});
+      else put(c.zones,c.start,c.end);
+    });
+  }
+  rangeSessions(wk).forEach(function(s){s.pods.forEach(function(p){add(p.name,(p.cells[j]||{}).cards)})});
+  if(camp&&!camp.season)camp.pods.forEach(function(p){add(p.name+' (Camp)',(p.cells[j]||{}).cards)});
+  var n=new Date(),nowM=(j===todayCol(cs))?n.getHours()*60+n.getMinutes():-1;
+  var h='<div class="rb"><div class="rb-day">'+esc(dayName(cs,j))+' <small>'+esc(rangeDateLabel(wk,j))+'</small></div>';
+  RANGE_BALL_ZONES.forEach(function(z){
+    var sorted=byZone[z].sort(function(a,b){return a.start-b.start||a.end-b.end}),l=[];
+    /* groups on the same zone at exactly the same time share one row: "Brad & Kip" */
+    sorted.forEach(function(e){
+      var m=l[l.length-1];
+      if(m&&m.start===e.start&&m.end===e.end){
+        if(m.who.indexOf(e.who)<0)m.who.push(e.who);
+        if(m.titles.indexOf(e.title)<0)m.titles.push(e.title);
+      }else l.push({who:[e.who],titles:[e.title],start:e.start,end:e.end,color:e.color});
+    });
+    h+='<section class="rb-z"><h3>'+esc(zoneLabel(z))+'</h3>';
+    if(!l.length)h+='<div class="rb-none">Nothing scheduled</div>';
+    l.forEach(function(e){
+      var live=nowM>=e.start&&nowM<e.end;
+      var names=e.who.length>1?e.who.slice(0,-1).join(', ')+' & '+e.who[e.who.length-1]:e.who[0];
+      h+='<div class="rb-r'+(live?' now':'')+'" style="--c:'+e.color+'"><span class="rb-t">'+esc(fmtRange(e.start,e.end))+'</span><span class="rb-w"><b>'+esc(names)+'</b> '+esc(e.titles.join(' / '))+'</span>'+(live?'<i>Now</i>':'')+'</div>';
+    });
+    h+='</section>';
+  });
+  return h+'</div>';
+}
+/* phone: the hourly schedule as one card per person, with the week listed down the card (the desktop table is too wide to read on a phone) */
+var rangeWho='';
+function rangeHoursMobile(){
+  var wks=hoursWeeks();
+  if(!wks.length)return '<p class="rv-empty">The hourly schedule has not been added yet.</p>';
+  var names=[];
+  wks.forEach(function(w){var d=hoursData(w,false);(d?d.rows:[]).forEach(function(r){var n=String(r.name||'').trim();if(n&&names.indexOf(n)<0)names.push(n)})});
+  names.sort(function(a,b){return a.localeCompare(b)});
+  if(rangeWho&&names.indexOf(rangeWho)<0)rangeWho='';
+  var dn=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],t0=new Date();t0.setHours(0,0,0,0);
+  var h='<div class="hm-filter"><label>Show <select id="hmwho" aria-label="Show hours for"><option value="">Everyone</option>'+
+    names.map(function(n){return '<option'+(n===rangeWho?' selected':'')+'>'+esc(n)+'</option>'}).join('')+'</select></label></div>';
+  wks.forEach(function(w){
+    var d=hoursData(w,false),rows=(d?d.rows:[]).filter(function(r){return !rangeWho||String(r.name||'').trim()===rangeWho}),w0=weekStart(w);
+    h+='<div class="hm-wk">Week of '+esc(rangeDateLabel(w,0))+'</div>';
+    if(!rows.length){h+='<p class="hm-none">No hours listed for '+esc(rangeWho||'anyone')+' this week.</p>';return}
+    rows.forEach(function(r){
+      h+='<section class="hm-card"><header><b>'+esc(r.name)+'</b>'+(String(r.total||'').trim()?'<span>Total '+esc(r.total)+'</span>':'')+'</header>';
+      (r.cells||[]).forEach(function(c,ci){
+        var day=w0?new Date(w0.getFullYear(),w0.getMonth(),w0.getDate()+ci):null,today=!!day&&day.getTime()===t0.getTime();
+        h+='<div class="hm-d'+(today?' today':'')+'"><span class="hm-dn">'+dn[ci]+' <small>'+esc(rangeDateLabel(w,ci))+(today?' · Today':'')+'</small></span><span class="hm-h '+hcClass(c)+'">'+esc(c.t||'—')+'</span></div>';
+      });
+      h+='</section>';
+    });
+  });
+  return h;
+}
+function renderRange(){
   var el=$('#rangeview');el.classList.toggle('on',rangeOpen);
   if(!rangeOpen)return;
   var wks=rangeWeeks();
-  if(isMobile())rangeTab='S';
-  if(!wks.length){
+  if(!wks.length&&isMobile()&&rangeTab==='H'){/* hours do not depend on a published schedule */}
+  else if(!wks.length){
     $('#rvweeks').innerHTML='';$('#rvsess').innerHTML='';$('#rvdays').innerHTML='';
     $('#rvbody').innerHTML='<p class="rv-empty">No schedule has been published yet. Check back soon.</p>';return;
   }
@@ -4161,7 +4436,9 @@ function rangeSessions(wk){
   }
   var cs=ss.filter(function(x){return x.id===rangeSess})[0];
   $('#rvsess').innerHTML=ss.map(function(x){return '<button data-rs="'+x.id+'" aria-pressed="'+(x.id===rangeSess)+'"><b>'+esc(tabLabel(x))+'</b></button>'}).join('');
-  $('#rvsess').style.display=rangeTab==='S'?'':'none';
+  /* the Driving Range tab on a phone covers AM and PM together, so the AM / PM buttons are hidden there */
+  var rangeTabView=isMobile()&&rangeTab==='S'&&rangeMobView==='range';
+  $('#rvsess').style.display=(rangeTab==='S'&&!rangeTabView)?'':'none';
   $('#rvweeks').style.display=rangeTab==='S'?'':'none';
   var days=cs?cs.days.slice(0,5):[];
   if(rangeDay==null||rangeDay<0||rangeDay>=days.length){var tj=todayCol(cs||{title:'Week of '+rangeWk,days:days});rangeDay=(tj>=0&&tj<5)?tj:0}
@@ -4170,10 +4447,17 @@ function rangeSessions(wk){
   $('#rvlay').style.display='none';
   Array.prototype.forEach.call($('#rvlay').querySelectorAll('button'),function(b){b.setAttribute('aria-pressed',b.dataset.lay===rangeLay)});
   $('#rvtabS').setAttribute('aria-selected',rangeTab==='S');$('#rvtabH').setAttribute('aria-selected',rangeTab==='H');
+  /* the bar at the bottom of a phone screen */
+  $('#rvbS').setAttribute('aria-pressed',rangeTab==='S');$('#rvbH').setAttribute('aria-pressed',rangeTab==='H');
   var body;
-  if(rangeTab!=='S')body=rangeHoursAll(unlocked);
+  if(rangeTab!=='S')body=isMobile()?rangeHoursMobile():rangeHoursAll(unlocked);
   else if(!cs)body='<p class="rv-empty">Nothing scheduled.</p>';
-  else body=rangeSessionHtml(cs,isMobile()?rangeDay:null);
+  else if(isMobile()){
+    /* phone: the Driving Range tab (zones 2, 5, 11 and 12), or the old grid */
+    body='<div class="rn-view" role="group" aria-label="View"><button type="button" data-rv="range" aria-pressed="'+(rangeMobView==='range')+'">Driving Range</button><button type="button" data-rv="grid" aria-pressed="'+(rangeMobView==='grid')+'">Grid</button></div>'+
+      (rangeMobView==='range'?rangeBallsHtml(rangeWk,cs,rangeDay):rangeSessionHtml(cs,rangeDay));
+  }
+  else body=rangeSessionHtml(cs,null);
   $('#rvbody').innerHTML=body;
 }function openRange(){
   rangeOpen=true;try{sessionStorage.setItem(RANGE_KEY,'1')}catch(e){}
@@ -4341,12 +4625,18 @@ $('#rangeview').addEventListener('click',function(e){
   if(b.dataset.rw){rangeWk=b.dataset.rw;renderRange();return}
   if(b.dataset.rs){rangeSess=b.dataset.rs;renderRange();return}
   if(b.dataset.rd!==undefined){rangeDay=+b.dataset.rd;renderRange();return}
+  if(b.dataset.rv){rangeMobView=b.dataset.rv==='grid'?'grid':'range';renderRange();return}
+  if(b.dataset.rtab){rangeTab=b.dataset.rtab==='H'?'H':'S';renderRange();$('#rangeview').scrollTop=0;return}
   if(b.dataset.lay){rangeLay=b.dataset.lay==='group'?'group':'zone';renderRange();return}
   if(b.id==='rvtabS'){rangeTab='S';renderRange();return}
   if(b.id==='rvtabH'){rangeTab='H';renderRange();return}
   if(b.dataset.rh){rangeHoursAction(b);return}
   if(b.id==='rvprint'){printRange();return}
   if(b.id==='rvexit'){closeRange();return}
+});
+/* phone hours: choose whose hours to show */
+$('#rangeview').addEventListener('change',function(e){
+  if(e.target.id==='hmwho'){rangeWho=e.target.value;renderRange()}
 });
 $('#lrange').addEventListener('click',function(e){
   e.preventDefault();
@@ -4426,7 +4716,7 @@ $('#pdlg').addEventListener('mousedown',function(e){if(e.target===this)this.clos
 function afterRender(){if(pinPrompt){pinPrompt=false;syncHash();showPin()}}
 function hashFor(){return mode==='coach'?'#coach'+(coachFilter?'='+encodeURIComponent(coachFilter):''):(mode==='analytics'?'#analytics':(mode==='news'?'#news':(mode==='tee'?'#tee':'')))}
 function syncHash(){try{history.replaceState(null,'',hashFor()||(location.pathname+location.search))}catch(e){}}
-$('#podfilter').onchange=function(){coachFilter=this.value;fullDay=!!coachFilter&&!isSpecCoach(coachFilter);syncHash();render()};
+$('#podfilter').onchange=function(){coachFilter=this.value;fullDay=!!coachFilter&&!isSpecView(coachFilter);syncHash();render()};
 $('#lwho').addEventListener('change',function(){if(this.value)chooseWho('c:'+this.value)});
 $('#wkPrev').onclick=function(){wkStep(-1)};
 $('#wkNext').onclick=function(){wkStep(1)};
@@ -4570,7 +4860,7 @@ function applyRemote(f,first){
   var prev=state&&state.active;
   applying=true;
   try{
-    var st=SYNC.compose(f.rows,f.settings,f.priv,blankState());
+    var st=SYNC.compose(f.rows,f.settings,f.priv,blankState(),f.campers);
     if(!st.sessions.length)st.sessions=blankState().sessions;
     st.active=prev;
     state=migrateState(st);
@@ -4579,6 +4869,8 @@ function applyRemote(f,first){
     SYNC.remember(f.rows,f.settings,f.priv,state);
   }finally{applying=false}
   remoteSig=SYNC.signature(f);remoteLoaded=true;pushBlocked=false;
+  /* weeks saved before the camper lock still hold every camper detail in their public row: one save moves them into the locked table */
+  if(unlocked&&staffPin&&SYNC.needsMigration())doPush();
   defaultWeek();
   if(first&&!unlocked)coachDefaultView();
   render();if(first)afterRender();
@@ -4598,9 +4890,42 @@ function offerUpload(){
     pushBlocked=true;toast('Not uploaded. Changes made here stay in this browser only.',false,true);
   }else{pushBlocked=false}
 }
+/* a coach's view: the published schedule, plus camper details when a valid camper code is held */
+function fetchForCoach(){
+  return SYNC.fetchPublic().then(function(f){
+    if(!camperCode){camperOK=false;return f}
+    return SYNC.fetchCampers(camperCode).then(function(r){
+      if(r&&r.ok){f.campers=r.data||{};camperOK=true}
+      else{camperOK=false;if(!(r&&r.locked)){camperCode='';try{sessionStorage.removeItem(CAMPER_KEY)}catch(e){}}}
+      return f;
+    }).catch(function(){camperOK=false;return f});
+  });
+}
+function tryCamperCode(code,onMsg){
+  code=String(code||'').trim();
+  if(!/^\d{4}$/.test(code)){onMsg('Enter the 4-digit code.');return}
+  SYNC.fetchCampers(code).then(function(r){
+    if(r&&r.ok){camperCode=code;try{sessionStorage.setItem(CAMPER_KEY,code)}catch(e){}return remoteRefresh(false)}
+    onMsg(r&&r.unset?'Camper details aren’t set up yet. Ask staff.':(r&&r.locked?'Too many wrong tries. Try again in 15 minutes.':'That code didn’t match.'));
+  }).catch(function(){onMsg('Couldn’t reach the shared schedule. Try again.')});
+}
+document.addEventListener('click',function(e){
+  var b=e.target.closest&&e.target.closest('[data-unlock="camp"]');if(!b)return;
+  e.stopPropagation();
+  var bar=b.closest('.camplock')||document,inp=bar.querySelector('input'),er=bar.querySelector('.camperr');
+  var digits=String(inp?inp.value:'').replace(/\D/g,'');
+  if(digits.length!==4){
+    if(er)er.textContent=digits.length?'Enter all 4 digits (the box has '+digits.length+').':'Type the 4-digit code in the box first, then press Unlock.';
+    if(inp)inp.focus();return;
+  }
+  tryCamperCode(digits,function(m){if(er)er.textContent=m;if(inp)inp.select()});
+},true);
+document.addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&e.target&&e.target.id==='campcode'){e.preventDefault();var b=document.querySelector('[data-unlock="camp"]');if(b)b.click()}
+});
 function remoteRefresh(first){
   var staff=unlocked&&!!staffPin;
-  return (staff?SYNC.fetchAll(staffPin):SYNC.fetchPublic()).then(function(f){
+  return (staff?SYNC.fetchAll(staffPin):fetchForCoach()).then(function(f){
     if(staff&&SYNC.isEmpty(f))offerUpload();
     else applyRemote(f,first);
   }).catch(function(e){
@@ -4612,7 +4937,7 @@ function remoteRefresh(first){
 /* coaches pick up the staff's changes on their own, every 30 seconds and whenever the page comes back to the front */
 function pollRemote(){
   if(unlocked||document.hidden||!SYNC.enabled)return;
-  SYNC.fetchPublic().then(function(f){if(!unlocked&&SYNC.signature(f)!==remoteSig)applyRemote(f,false)}).catch(function(){});
+  fetchForCoach().then(function(f){if(!unlocked&&SYNC.signature(f)!==remoteSig)applyRemote(f,false)}).catch(function(){});
 }
 setInterval(pollRemote,30000);
 document.addEventListener('visibilitychange',pollRemote);

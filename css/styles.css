@@ -1320,3 +1320,93 @@ body:not(.mobile) .progstack .progpm{position:absolute;left:14px}
 /* tee time rows: light orange once requested, light green once confirmed */
 .teetbl tr.tee-req td{background:color-mix(in srgb,#F59A23 20%,var(--surface))}
 .teetbl tr.tee-ok td{background:color-mix(in srgb,#3FB950 20%,var(--surface))}
+
+/* locked camper details: a blurred placeholder (not the real data) and an unlock bar */
+.cblur{display:inline-block;filter:blur(5px);-webkit-filter:blur(5px);user-select:none;-webkit-user-select:none;pointer-events:none;color:var(--muted);letter-spacing:2px}
+.camplock{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--navy) 6%,var(--surface))}
+.camplock .clk{font-size:20px}
+.camplock .cltx{display:flex;flex-direction:column;flex:1 1 220px;min-width:0}
+.camplock .cltx small{color:var(--muted)}
+.camplock input{width:92px;text-align:center;letter-spacing:6px;font-size:18px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.camplock .camperr{flex-basis:100%;color:#C62020;font-size:13px;min-height:0}
+.camplock .camperr:empty{display:none}
+
+/* the camper code box is a plain text box that shows dots, so password managers and autofill leave it alone */
+.camplock input#campcode{-webkit-text-security:disc;text-security:disc}
+
+/* a specialist's event shows which group it is for */
+.card .cgrp{display:inline-block;align-self:flex-start;margin:1px 0 2px;padding:0 7px;border-radius:9px;background:rgba(255,255,255,.7);border:1px solid color-mix(in srgb,var(--c) 55%,transparent);color:var(--ink);font-weight:700;font-size:calc(11px * var(--zf,1));line-height:1.5;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.card .cgrp::before{content:"Group: ";font-weight:500;opacity:.7}
+/* on a one-line (short) event the group sits beside the title; the title shortens first */
+.card.short .cgrp{flex:0 0 auto;margin:0}
+.card.short .cgrp::before{content:""}
+
+/* phone range view: the Driving Range tab (zones where balls are placed), no sideways scrolling */
+.rn-view{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:0 0 12px;background:var(--surface)}
+.rn-view button{flex:1;padding:9px 0;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:14px;cursor:pointer}
+.rn-view button[aria-pressed="true"]{background:#0B70B8;color:#fff}
+.rb-day{font:700 18px "Bricolage Grotesque",system-ui,sans-serif;margin:0 2px 8px}
+.rb-day small{font:500 13px system-ui,sans-serif;color:var(--muted);margin-left:6px}
+.rb-z{margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.rb-z h3{margin:0;padding:8px 12px;font:700 16px "Bricolage Grotesque",system-ui,sans-serif;color:#0B70B8;border-bottom:2px solid #0B70B8;background:color-mix(in srgb,#0B70B8 7%,var(--surface))}
+.rb-r{display:flex;align-items:baseline;gap:10px;padding:8px 12px;border-left:5px solid var(--c);border-bottom:1px solid var(--line)}
+.rb-r:last-child{border-bottom:0}
+.rb-r.now{background:color-mix(in srgb,var(--c) 16%,var(--surface))}
+.rb-t{flex:0 0 112px;font-weight:700;font-size:13.5px;white-space:nowrap}
+.rb-w{flex:1;min-width:0;font-size:14px}
+.rb-w b{font-weight:700}
+.rb-r i{font-style:normal;font-weight:700;font-size:11px;background:#E5251B;color:#fff;border-radius:9px;padding:1px 8px}
+.rb-none{padding:10px 12px;color:var(--muted);font-size:14px}
+/* the week's transportation page (staff only) */
+.transview{position:fixed;inset:0;z-index:240;background:var(--bg);overflow:auto;display:none;color:var(--ink)}
+.transview.on{display:block}
+.tvweek{color:#fff;font-weight:600;opacity:.9}
+.transsec{margin:0 0 26px}
+.transsec h3{margin:0 0 6px;font:700 18px "Bricolage Grotesque",system-ui,sans-serif;color:#0B70B8}
+.transtbl{border-collapse:collapse;width:100%;min-width:980px;font-size:14px;background:var(--surface)}
+.transtbl th,.transtbl td{border:1px solid var(--line);padding:6px 8px;text-align:center;vertical-align:middle;white-space:nowrap}
+.transtbl td.l{text-align:left;white-space:normal;min-width:180px}
+.transtbl thead th{background:color-mix(in srgb,#0B70B8 12%,var(--surface));font-weight:700}
+.transtbl tbody tr{background:color-mix(in srgb,#9ADBF5 22%,var(--surface))}
+.transtbl tbody tr.tt-book{background:color-mix(in srgb,#3FB950 22%,var(--surface))}
+.transtbl select{font:inherit;padding:3px 4px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+.tvnote{margin-top:6px}
+.tlgo{display:flex;align-items:center;justify-content:center}
+.tlopen{width:26px;height:26px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:#0B70B8;font-weight:700;cursor:pointer;padding:0;line-height:1}
+.tlopen:hover{background:#0B70B8;color:#fff}
+@media print{.transtbl{min-width:0;font-size:11px}}
+
+/* range view on a phone: no scroll bars (swipe with a finger instead), and the five day buttons fit the width */
+@media (max-width:700px),(hover:none) and (pointer:coarse){
+  .rangeview,.rv-days,.rv-body{scrollbar-width:none;-ms-overflow-style:none}
+  .rangeview::-webkit-scrollbar,.rv-days::-webkit-scrollbar,.rv-body::-webkit-scrollbar{display:none;width:0;height:0}
+  .rv-days{overflow-x:hidden}
+  .rv-days button{flex:1 1 0;min-width:0;padding:6px 2px}
+}
+
+/* range view on a phone: a bar at the bottom to switch between the Driving Range and the Hours, and the hours as one card per person */
+.rv-bottom{display:none}
+@media (max-width:700px),(hover:none) and (pointer:coarse){
+  .rv-bottom{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:260;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -2px 10px rgba(0,0,0,.08);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .rv-bottom button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:9px 4px 8px;border:0;background:transparent;color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer}
+  .rv-bottom button[aria-pressed="true"]{color:#0B70B8}
+  .rv-bottom button[aria-pressed="true"] svg{stroke-width:2.4}
+  .rangeview .rv-body{padding-bottom:calc(86px + env(safe-area-inset-bottom,0px))}
+}
+.hm-filter{margin:0 0 10px}
+.hm-filter label{display:flex;align-items:center;gap:10px;font-weight:700}
+.hm-filter select{flex:1;font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
+.hm-wk{display:inline-block;background:#F4B6F0;color:#3A1B38;font-weight:700;padding:3px 12px;border-radius:4px;margin:6px 0 8px}
+.hm-none{color:var(--muted);margin:0 0 12px}
+.hm-card{margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.hm-card header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:8px 12px;background:#FFE94D;color:#172337}
+.hm-card header b{font:700 16px "Bricolage Grotesque",system-ui,sans-serif}
+.hm-card header span{font-weight:700;font-size:13px}
+.hm-d{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 12px;border-top:1px solid var(--line)}
+.hm-d.today{background:color-mix(in srgb,#0B70B8 12%,var(--surface))}
+.hm-dn{font-weight:700;font-size:14px}
+.hm-dn small{font-weight:500;color:var(--muted);font-size:12px}
+.hm-h{min-width:104px;text-align:center;font-weight:600;font-size:14px;padding:3px 10px;border-radius:7px}
+.hm-h.hk-b{background:#4472C4;color:#fff;font-weight:800}
+.hm-h.hk-r{background:#FF0000;color:#fff;font-weight:800}
+.hm-h.hk-k{background:#111;color:#fff}

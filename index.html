@@ -356,6 +356,30 @@
 <dialog id="cdlg"><div class="dbody" id="cbody"></div></dialog>
 
 <div id="printroot"></div>
+<div class="transview noprint" id="transview">
+  <header class="rv-top">
+    <div class="rv-brand"><img src="img/img-logo-white.png" alt="IMG Academy"><span>Transportation</span></div>
+    <span class="tvweek" id="tvweek"></span>
+    <span class="rv-sp"></span>
+    <button class="rv-btn" id="tvadd" type="button">+ Add trip</button>
+    <button class="rv-btn" id="tvcopy" type="button">Copy</button>
+    <button class="rv-btn" id="tvprint" type="button">Print</button>
+    <button class="rv-btn" id="tvclose" type="button">Close</button>
+  </header>
+  <main class="rv-body" id="tvbody"></main>
+</div>
+<dialog id="xtdlg">
+  <div class="dbody">
+    <h2 id="xttitle">Add trip</h2>
+    <p class="note" style="margin:0">For a trip that isn't on the schedule, like a weekend round.</p>
+    <div class="row2"><label>Day<select id="xtday"></select></label><label>Destination<input id="xtcourse" type="text" list="xtcourses" autocomplete="off" placeholder="Course"><datalist id="xtcourses"></datalist></label></div>
+    <div class="row2"><label>Holes<input id="xtholes" type="number" min="0" max="36" placeholder="18"></label><label>Students<input id="xtstu" type="number" min="0" max="200" placeholder="24"></label></div>
+    <div class="row2"><label>Departure<input id="xtdep" type="time"></label><label>Start time<input id="xttee" type="time"></label></div>
+    <div class="row2"><label>Pick up<input id="xtpick" type="time"></label><label>Van or bus<select id="xtmode"><option value="">Auto (van for 8 or fewer, bus for 9+)</option><option>Van</option><option>Bus</option></select></label></div>
+    <label>Coaches or note <small>optional</small><input id="xtcoach" type="text" autocomplete="off"></label>
+    <div class="dact"><button class="btn primary" id="xtsave" type="button">Save</button><button class="btn danger" id="xtdel" type="button">Delete</button><span class="sp"></span><button class="btn" id="xtcancel" type="button">Cancel</button></div>
+  </div>
+</dialog>
 <div class="rangeview noprint" id="rangeview">
   <header class="rv-top">
     <div class="rv-brand"><img src="img/img-logo-white.png" alt="IMG Academy"><span>Range Staff</span></div>
@@ -369,6 +393,10 @@
   <div class="rv-days" id="rvsess" role="group" aria-label="Schedule"></div>
   <div class="rv-days" id="rvdays" role="group" aria-label="Day"></div>
   <main class="rv-body" id="rvbody"></main>
+  <nav class="rv-bottom" id="rvbottom" aria-label="Range sections">
+    <button type="button" id="rvbS" data-rtab="S" aria-pressed="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg><span>Driving Range</span></button>
+    <button type="button" id="rvbH" data-rtab="H" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg><span>Hours</span></button>
+  </nav>
 </div>
 <div class="landing noprint" id="landing" hidden>
   <div class="lbox">
